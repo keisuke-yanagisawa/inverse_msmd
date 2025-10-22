@@ -30,11 +30,11 @@ GAMMA : float
 
 使用方法
 --------
-このスクリプトを実行する前に、superimposition.pyを実行して
+このスクリプトを実行する前に、integrated_alignment.pyを実行して
 重ね合わせ済みのタンパク質構造を生成してください。
 
     $ cd examples
-    $ python superimposition.py
+    $ python integrated_alignment.py
     $ python calculate_matching.py
 
 出力
@@ -119,7 +119,8 @@ if __name__ == "__main__":
         probe_id = matching[:3]
         
         # 重ね合わせ済みのタンパク質構造を読み込み
-        protein = PDB.get_structure(f"../data/sample_proteins/4hw3_aligned_to_{matching}.pdb")
+        # integrated_alignment.pyで生成されたファイルを使用
+        protein = PDB.get_structure(f"./aligned_structures/aligned_to_{matching}.pdb")
         
         # プローブ分子を読み込み、中心座標を計算
         probe = PDB.get_structure(f"../data/sample_probes/{probe_id}.pdb")
