@@ -111,7 +111,6 @@ PDB.save(protein, "aligned_protein.pdb")
 パッケージには、サンプルデータ（[`data/`](data/)ディレクトリ）付きのサンプルスクリプト（[`examples/`](examples/)ディレクトリ）が含まれています：
 
 - [`examples/integrated_alignment.py`](examples/integrated_alignment.py): ⭐ 統合アライメントAPIの使用例（推奨）
-- [`examples/atom_matching.py`](examples/atom_matching.py): 原子マッチングの例（リファレンス実装）
 - [`examples/superimposition.py`](examples/superimposition.py): 構造重ね合わせの例（リファレンス実装）
 - [`examples/calculate_matching.py`](examples/calculate_matching.py): マッチングスコア計算の例
 - [`examples/add_isotope_labels.py`](examples/add_isotope_labels.py): アイソトープラベル付与ツール
@@ -142,7 +141,6 @@ inverse_msmd/
 ├── examples/               # サンプルスクリプト
 │   ├── README.md          # サンプルの説明
 │   ├── integrated_alignment.py  # 統合API使用例
-│   ├── atom_matching.py   # 原子マッチング例
 │   ├── superimposition.py # 構造重ね合わせ例
 │   ├── calculate_matching.py  # スコア計算例
 │   └── add_isotope_labels.py  # アイソトープラベル付与

@@ -93,55 +93,7 @@ results = align_structures(
 
 ---
 
-### 2. 原子マッチング（atom_matching.py）
-
-**説明:**  
-プローブ分子と参照リガンドの間で最大共通部分構造（MCS）を検出するリファレンス実装です。統合APIの内部動作を理解したい場合に参照してください。
-
-**実行方法:**
-```bash
-cd examples
-python atom_matching.py
-```
-
-**処理内容:**
-1. プローブ分子（PDB形式）と参照リガンド（SDF形式）を読み込み
-2. RDKitを使用してMCS（最大共通部分構造）を検出
-3. アイソトープラベル（ISO=1）を持つ原子のみを考慮
-4. すべての可能なマッチングを列挙（重複除外）
-5. 一致する原子のインデックスペアを保存
-
-**主な機能:**
-- RDKitライブラリを使用した分子構造の読み込み
-- アイソトープラベルに基づく部分構造抽出
-- MCS検出とマッチング列挙
-- 原子ペアデータの生成と保存
-
-**出力:**
-```
-../data/atom_matching/
-├── atom_matching_A08_0    # マッチング0
-├── atom_matching_A08_1    # マッチング1
-├── atom_matching_E24_0
-└── ...
-```
-
-各ファイルの形式：
-```
-# 1行目: プローブ側の原子インデックス
-# 2行目: リガンド側の原子インデックス
-0 1 2 3 4 5
-10 11 12 13 14 15
-```
-
-**使用する場面:**
-- カスタムマッチングアルゴリズムを開発する場合
-- MCS検索の詳細を確認したい場合
-- 統合APIとは異なるマッチング戦略を試したい場合
-
----
-
-### 3. 構造重ね合わせ（superimposition.py）
+### 2. 構造重ね合わせ（superimposition.py）
 
 **説明:**  
 事前に計算された原子マッチングデータを使用して、タンパク質構造とプローブ分子を重ね合わせるリファレンス実装です。
@@ -179,7 +131,7 @@ python superimposition.py
 
 ---
 
-### 4. マッチングスコア計算（calculate_matching.py）
+### 3. マッチングスコア計算（calculate_matching.py）
 
 **説明:**  
 相互作用プロファイルに基づいてマッチングスコアを計算するサンプルです。重ね合わせ済みのタンパク質構造とプローブのプロファイルを使用します。
@@ -223,7 +175,7 @@ E24_2 -195.89
 
 ---
 
-### 5. アイソトープラベル付与（add_isotope_labels.py）
+### 4. アイソトープラベル付与（add_isotope_labels.py）
 
 **説明:**  
 SDFファイルの分子に対して、SMARTS記法で指定した部分構造にアイソトープ番号を付与するツールです。原子マッチングで特定の部分構造のみを考慮したい場合に使用します。
@@ -292,25 +244,6 @@ python add_isotope_labels.py input.sdf output.sdf "[NH2]" 15
 python integrated_alignment.py
 
 # 2. マッチングスコアを計算
-python calculate_matching.py
-```
-
-### 詳細な制御が必要な場合
-
-```bash
-# 1. アイソトープラベルを付与（オプション）
-python add_isotope_labels.py \
-    ../data/atom_matching/4hw3_A_lig.sdf \
-    ../data/atom_matching/4hw3_A_lig_with_subst_label.sdf \
-    "your_smarts_pattern" 1
-
-# 2. 原子マッチングを実行
-python atom_matching.py
-
-# 3. 構造重ね合わせを実行
-python superimposition.py
-
-# 4. マッチングスコアを計算
 python calculate_matching.py
 ```
 
