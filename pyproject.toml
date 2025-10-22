@@ -31,7 +31,7 @@ dependencies = [
     "biopython>=1.79",
     "scikit-learn>=0.24.0",
     "scipy>=1.7.0",
-    "gridData>=0.6.0",
+    "GridDataFormats>=0.6.0",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +50,7 @@ Documentation = "https://github.com/akiyamalab/inverse_msmd/blob/main/README.md"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["inverse_msmd*"]
-exclude = ["scripts*", "profile_superimposition*"]
+exclude = ["examples*", "data*", "tests*", "profile_superimposition*"]
 
 [tool.black]
 line-length = 100
