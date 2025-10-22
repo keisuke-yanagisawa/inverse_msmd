@@ -28,6 +28,10 @@ utils.path_utils : パス処理ユーティリティ
     ファイルパスの展開
     - expandpath: 環境変数とチルダを展開
 
+utils.mol_utils : 分子データ操作ユーティリティ
+    分子構造データの読み込み、変換、出力機能
+    - create_sdf_from_pdb_smi: 異なる形式の構造データを統合
+
 使用例
 ------
 統合APIを使用した基本的なワークフロー：
@@ -88,6 +92,7 @@ utils.path_utils : パス処理ユーティリティ
 from .utils.bio_utils import SuperImposer, PDB
 from .utils.spatial_utils import estimate_volume
 from .utils.path_utils import expandpath
+from .utils.mol_utils import read_mol_from_pdb_smi
 from .alignment import AlignmentResult, align_structures, find_atom_matches, align_structure
 
 __version__ = "0.1.0"
@@ -99,6 +104,7 @@ __all__ = [
     "PDB",
     "estimate_volume",
     "expandpath",
+    "read_mol_from_pdb_smi",
     "AlignmentResult",
     "align_structures",
     "find_atom_matches",

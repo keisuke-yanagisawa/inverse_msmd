@@ -19,6 +19,13 @@ path_utils : パス処理ユーティリティ
     ファイルパスの展開と処理
     - expandpath: 環境変数とチルダを展開
 
+mol_utils : 分子データ操作ユーティリティ
+    分子構造データの読み込み、変換、出力機能
+    - create_sdf_from_pdb_smi: 異なる形式の構造データを統合
+    - create_mol_from_pdb_with_smiles_template: テンプレートマッチング
+    - read_smiles: SMILES文字列の読み込み
+    - read_pdb_coordinates: 座標データの読み込み
+
 使用例
 ------
 >>> from inverse_msmd.utils import SuperImposer, PDB, estimate_volume, expandpath
@@ -41,10 +48,12 @@ path_utils : パス処理ユーティリティ
 from .bio_utils import SuperImposer, PDB
 from .spatial_utils import estimate_volume
 from .path_utils import expandpath
+from .mol_utils import read_mol_from_pdb_smi
 
 __all__ = [
     "SuperImposer",
     "PDB",
     "estimate_volume",
     "expandpath",
+    "read_mol_from_pdb_smi",
 ]

@@ -137,57 +137,26 @@ E24_2 -195.89
 
 ---
 
-### 3. アイソトープラベル付与（add_isotope_labels.py）
+### 3. アイソトープラベル付与ツール
 
-**説明:**  
-SDFファイルの分子に対して、SMARTS記法で指定した部分構造にアイソトープ番号を付与するツールです。原子マッチングで特定の部分構造のみを考慮したい場合に使用します。
+**注意:** このツールは[`../scripts/add_isotope_labels.py`](../scripts/add_isotope_labels.py)に移動しました。
 
-**実行方法:**
+**説明:**
+SDFファイルの分子に対して、SMARTS記法で指定した部分構造にアイソトープ番号を付与する実用的なCLIツールです。原子マッチングで特定の部分構造のみを考慮したい場合に使用します。
+
+**詳細なドキュメント:**
+[`../scripts/README.md`](../scripts/README.md)の「アイソトープラベル付与スクリプト」セクションを参照してください。
+
+**クイックスタート:**
 ```bash
-cd examples
-
-# 基本的な使用法（全マッチに適用）
-python add_isotope_labels.py input.sdf output.sdf "c1ccccc1" 13
+# 基本的な使用法
+python scripts/add_isotope_labels.py input.sdf output.sdf "c1ccccc1" 13
 
 # 対話的モードで選択
-python add_isotope_labels.py input.sdf output.sdf "c1ccccc1" 13 --interactive
+python scripts/add_isotope_labels.py input.sdf output.sdf "c1ccccc1" 13 --interactive
 
-# 特定のマッチのみに適用
-python add_isotope_labels.py input.sdf output.sdf "c1ccccc1" 13 --match-index 1
-
-# 可視化オプション付き
-python add_isotope_labels.py input.sdf output.sdf "c1ccccc1" 13 --visualize
-```
-
-**主な機能:**
-- SMARTS記法による部分構造指定
-- 複数マッチの自動検出
-- 対話的マッチ選択モード
-- ラベル付与前後の分子構造可視化
-- 複数分子の一括処理
-
-**引数:**
-- `input`: 入力SDFファイル
-- `output`: 出力SDFファイル
-- `smarts`: SMARTS記法による部分構造パターン
-- `isotope`: 付与する同位体番号
-- `--interactive, -i`: 対話的マッチ選択モード
-- `--match-index N, -m N`: N番目のマッチのみに適用（0始まり）
-- `--visualize, -v`: 分子構造を画像で出力
-- `--image-dir DIR, -d DIR`: 画像出力ディレクトリ
-
-**使用例:**
-
-```bash
-# ベンゼン環の炭素に同位体番号13を付与
-python add_isotope_labels.py ligand.sdf labeled.sdf "c1ccccc1" 13
-
-# カルボニル基の炭素に13、酸素に18を付与（2段階）
-python add_isotope_labels.py input.sdf temp.sdf "[C]=[O]" 13
-python add_isotope_labels.py temp.sdf output.sdf "[O]=[C]" 18
-
-# アミン基の窒素に同位体番号15を付与
-python add_isotope_labels.py input.sdf output.sdf "[NH2]" 15
+# ヘルプを表示
+python scripts/add_isotope_labels.py --help
 ```
 
 **使用する場面:**
