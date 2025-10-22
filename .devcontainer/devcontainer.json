@@ -1,0 +1,5 @@
+{
+    "runArgs": ["--gpus", "all", "--shm-size", "8gb"],
+    "name": "inverse_msmd",
+    "dockerFile": "Dockerfile"
+}

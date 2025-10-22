@@ -1,0 +1,6 @@
+# Core dependencies for inverse_msmd
+numpy>=1.20.0
+biopython>=1.79
+scikit-learn>=0.24.0
+scipy>=1.7.0
+gridData>=0.6.0

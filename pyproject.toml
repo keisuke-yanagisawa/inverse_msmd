@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inverse_msmd"
+version = "0.1.0"
+description = "A package for inverse MSMD (Molecular Simulation with Multiple Descriptors) analysis"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Keisuke Yanagisawa", email = "yanagisawa@comp.isct.ac.jp"}
+]
+keywords = ["molecular dynamics", "protein structure", "superimposition", "MSMD"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "biopython>=1.79",
+    "scikit-learn>=0.24.0",
+    "scipy>=1.7.0",
+    "gridData>=0.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=21.0",
+    "flake8>=3.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/akiyamalab/inverse_msmd"
+Repository = "https://github.com/akiyamalab/inverse_msmd"
+Documentation = "https://github.com/akiyamalab/inverse_msmd/blob/main/README.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inverse_msmd*"]
+exclude = ["scripts*", "profile_superimposition*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
