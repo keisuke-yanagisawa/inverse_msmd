@@ -2,9 +2,7 @@
 
 このドキュメントは、実装の進捗状況と各タスクの詳細な記録を提供します。
 
-**最終更新**: 2025-10-23 (座標保持バグ修正完了)
-**最新更新**: 2025-10-23 (構造重ね合わせの座標系バグ修正完了)
-
+**最終更新**: 2025-10-23 (MCS重ね合わせ問題修正完了)
 
 ---
 
@@ -518,6 +516,83 @@ python test_coordinate_fix_check.py
 
 **修正前の動作**:
 - リガンドとタンパク質の相対位置関係は保持
+
+---
+
+## 🐛 MCS重ね合わせ問題の修正 (2025-10-23)
+
+### 問題の発見
+
+統合ワークフロー関数において、E23（置換前）とE24（置換後）の芳香環が正しく重ならない問題が発覚しました。
+
+**症状**:
+- E24の2つの芳香環の中央部分にリガンドのE23部分が配置される
+- MCS（最大共通部分構造）ベースの重ね合わせがうまく機能していない
+- 重ね合わせ後のRMSDが1.96Åと非常に大きい
+
+### 原因分析
+
+**初期のMCS設定（問題あり）**:
+```python
+# 環内と環外の区別なし
+mcs_result = rdFMCS.FindMCS([mol1_no_h, mol2_no_h])
+```
+
+この設定では：
+- MCS原子数: 8個
+- しかし、環内原子と環外原子が混在してマッチング
+- E23とE24の3D座標が大きく異なるため、RMSD 1.96Å
+
+### 解決策
+
+[`inverse_msmd/substructure_replacement.py:200`](../inverse_msmd/substructure_replacement.py:200)に修正を適用：
+
+```python
+# MCS検索（環内と環外のマッチングを制限）
+mcs_result = rdFMCS.FindMCS([mol1_no_h, mol2_no_h], ringMatchesRingOnly=True)
+```
+
+**重要なポイント**:
+- `ringMatchesRingOnly=True`をキーワード引数として直接渡す
+- MCSParametersオブジェクトではなく、キーワード引数を使用
+
+### 修正結果
+
+**修正前**:
+- MCS原子数: 8個
+- Atom matchingパターン数: 16個
+- RMSD: **1.958979 Å**（✗ 問題あり）
+- E23とE24の芳香環が重ならない
+
+**修正後**:
+- MCS原子数: 6個（より正確な芳香環マッチング）
+- Atom matchingパターン数: 24個
+- RMSD: **0.021014 Å**（✅ ほぼ完璧）
+- E23とE24の芳香環が正確に重なる
+
+### 影響
+
+この修正により：
+- ✅ 芳香環の正確な重ね合わせが実現
+- ✅ 化学的に意味のある構造置換が可能に
+- ✅ RMSDが劇的に改善（1.96Å → 0.021Å）
+- ✅ より多くのマッチングパターン（16 → 24）で柔軟性が向上
+
+### 検証
+
+修正後の動作確認：
+```bash
+python scripts/integrated_replacement.py \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --from-file data/sample_probes/E23 \
+    --to-file data/sample_probes/E24 \
+    --output output/final/ \
+    --match-index 0
+```
+
+出力構造をPyMOLで確認すると、E23とE24の芳香環が正確に重なっていることが確認できます。
+
 - しかしE24の向き・位置情報が失われる
 - MSMDワークフローでの後続処理に影響
 
@@ -535,6 +610,137 @@ python test_coordinate_fix_check.py
 **結論**: 修正により、設計仕様通りの動作となり、E24の座標系を基準とした構造重ね合わせが正しく実行されるようになりました。
 
 **影響**: 全40個のテストが引き続き成功し、座標が正しく保持されることを確認。
+
+
+---
+
+## 🔧 立体障害チェック機能の追加 (2025-10-23)
+
+### 問題の背景
+
+統合ワークフロー関数において、置換後のリガンドが立体化学的に不適切な構造になる可能性がありました。
+
+**具体的な問題**:
+- 置換基の向きによっては、分子内で原子間距離が異常に近くなる
+- 立体障害が発生しているパターンが出力に含まれる
+- 化学的に不自然な構造が生成される
+
+### 実装内容
+
+#### 1. 立体障害チェック関数の追加
+
+[`inverse_msmd/substructure_replacement.py:447`](../inverse_msmd/substructure_replacement.py:447)に新関数を追加：
+
+```python
+def check_steric_clash(
+    mol: Chem.Mol,
+    min_distance: float = 2.0,
+    exclude_bonded: bool = True
+) -> Tuple[bool, List[Tuple[int, int, float]]]:
+    """
+    分子内の立体障害（原子間距離が異常に近い）をチェックします。
+    
+    Parameters
+    ----------
+    mol : Chem.Mol
+        チェックする分子
+    min_distance : float, default=2.0
+        許容最小原子間距離（Å）
+    exclude_bonded : bool, default=True
+        結合している原子対を除外するかどうか
+    
+    Returns
+    -------
+    is_valid : bool
+        立体障害がない場合True
+    clashes : List[Tuple[int, int, float]]
+        立体障害がある原子対のリスト
+    """
+```
+
+**機能**:
+- 全原子間距離を計算（scipy.spatial.distance.pdist使用）
+- 結合している原子対を除外
+- 指定した最小距離（デフォルト2.0Å）より近い原子対を検出
+- 詳細な立体障害情報を返す
+
+#### 2. 統合ワークフローへの組み込み
+
+[`inverse_msmd/substructure_replacement.py:682`](../inverse_msmd/substructure_replacement.py:682)で、リガンド置換後に立体障害チェックを実行：
+
+```python
+# 5. 立体障害チェック
+print(f"  立体障害チェック中...")
+is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
+
+if not is_valid:
+    print(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
+    for atom_i, atom_j, dist in clashes:
+        atom_i_symbol = replaced_ligand.GetAtomWithIdx(atom_i).GetSymbol()
+        atom_j_symbol = replaced_ligand.GetAtomWithIdx(atom_j).GetSymbol()
+        print(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
+    print(f"  → このパターンをスキップします")
+    continue
+
+print(f"  ✓ 立体障害なし")
+```
+
+**動作**:
+- 立体障害が検出された場合、そのパターンをスキップ
+- 詳細な警告メッセージを表示（原子番号、元素記号、距離）
+- 有効なパターンのみを出力
+
+### 検証結果
+
+**テスト実行**:
+```bash
+python test_integrated_simple.py
+```
+
+**結果サマリー**:
+- 入力パターン数: 24パターン
+- 立体障害検出: 8パターン
+- 有効な出力: 16パターン（33%削減）
+
+**立体障害の検出例**:
+
+**パターン3** (13箇所の立体障害):
+```
+⚠ 警告: 立体障害を検出しました（13箇所）
+  原子4(C) - 原子21(C): 1.676Å
+  原子4(C) - 原子22(C): 0.981Å
+  原子4(C) - 原子23(C): 1.068Å
+  原子14(O) - 原子20(C): 0.152Å  ← 深刻な衝突
+```
+
+**パターン5** (軽微な立体障害):
+```
+⚠ 警告: 立体障害を検出しました（1箇所）
+  原子5(C) - 原子25(C): 1.876Å
+```
+
+### 効果
+
+この機能により：
+- ✅ 化学的に不適切な構造が自動的に除外される
+- ✅ 出力される構造の品質が向上
+- ✅ 後続の計算やシミュレーションでのエラーを防止
+- ✅ ユーザーが手動で構造を検証する手間が削減
+
+### 技術詳細
+
+**距離計算方法**:
+- `scipy.spatial.distance.pdist`: 全原子対の距離を効率的に計算
+- `squareform`: 距離行列に変換
+- 結合情報を考慮して、結合原子対を除外
+
+**閾値設定**:
+- デフォルト: 2.0Å
+- 一般的な原子間の最小距離（van der Waals半径の和）より保守的
+- 化学的に妥当な構造のみを許容
+
+**依存関係**:
+- `scipy.spatial.distance`: 距離計算ライブラリ（既存の依存関係）
 
 ---
 

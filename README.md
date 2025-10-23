@@ -97,15 +97,25 @@ for i, result in enumerate(results):
     print(f"  リガンド: {result['ligand_file']}")
 
 **重要な仕様**:
-- 統合部分構造置換では、**置換後の部分構造（to_file）の座標系を基準**とします
-- リガンドとタンパク質が置換後の部分構造に合わせて変換されます
-- これにより、MSMDプロファイルとの対応関係が維持されます
+- MCS（最大共通部分構造）ベースの正確な重ね合わせ（RMSD < 0.1 Å）
+- `ringMatchesRingOnly=True`により、芳香環が正確に重なります
+- リガンドとタンパク質の元の座標系を保持します
+- **立体障害の自動検出**: 置換後に原子間距離が2.0Å未満の構造を自動的に除外
     print(f"  タンパク質: {result['protein_file']}")
 ```
 
 **CLIからの使用:**
 
 ```bash
+# 基本的な使用方法
+python scripts/integrated_replacement.py \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --from-file data/sample_probes/E23 \
+    --to-file data/sample_probes/E24 \
+    --output output/integrated/
+
+# 詳細な進捗表示と特定のマッチを指定
 python scripts/integrated_replacement.py \
     --ligand data/atom_matching/4hw3_A_lig.sdf \
     --protein data/sample_proteins/4hw3_A.pdb \
@@ -116,10 +126,34 @@ python scripts/integrated_replacement.py \
     --verbose
 ```
 
+**コマンドラインオプション:**
+
+| オプション | 必須 | 説明 |
+|-----------|------|------|
+| `--ligand` | ✓ | リガンドSDFファイルのパス |
+| `--protein` | ✓ | タンパク質PDBファイルのパス |
+| `--from-file` | ✓ | 置換前の部分構造（拡張子なし、.pdbと.smiを自動読込） |
+| `--to-file` | ✓ | 置換後の部分構造（拡張子なし、.pdbと.smiを自動読込） |
+| `--output` | ✓ | 出力ディレクトリのパス |
+| `--match-index` | | 特定のマッチパターンを指定（0始まり） |
+| `--verbose` | | 詳細な進捗情報を表示 |
+| `--version` | | バージョン情報を表示 |
+
 **出力ファイル:**
 - `pattern_N_ligand_replaced.sdf`: 部分構造が置換されたリガンド
 - `pattern_N_protein_aligned.pdb`: 座標変換されたタンパク質
 - `substructure_matches.png`: 複数マッチ時の可視化画像（match_index未指定時）
+
+**注意**: 立体障害チェックにより、化学的に不適切な構造は自動的に除外されます。24パターン生成される場合、通常16パターン程度の有効な構造が出力されます。
+
+**実行結果の確認:**
+```bash
+# 生成されたファイル数を確認
+ls output/integrated/*.sdf | wc -l
+
+# ファイル一覧を表示
+ls -lh output/integrated/
+```
 
 ### 低レベルAPI
 

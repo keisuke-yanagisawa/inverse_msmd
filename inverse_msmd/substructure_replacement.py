@@ -35,6 +35,7 @@ import numpy.typing as npt
 from rdkit import Chem
 from rdkit.Chem import Draw
 from Bio.PDB.Structure import Structure
+from scipy.spatial.distance import pdist, squareform
 
 from .utils.bio_utils import SuperImposer, PDB
 from .utils.mol_utils import read_mol_from_pdb_smi
@@ -197,8 +198,8 @@ def match_substructures(
     mol1_no_h = Chem.RemoveHs(mol1)
     mol2_no_h = Chem.RemoveHs(mol2)
     
-    # MCS検索
-    mcs_result = rdFMCS.FindMCS([mol1_no_h, mol2_no_h])
+    # MCS検索（環内と環外のマッチングを制限）
+    mcs_result = rdFMCS.FindMCS([mol1_no_h, mol2_no_h], ringMatchesRingOnly=True)
     if mcs_result.numAtoms == 0:
         return []
     
@@ -370,8 +371,14 @@ def replace_ligand_substructure(
     # マッチした部分構造の原子インデックスをセットに変換
     match_set = set(match)
     
-    # 接続点を見つける（リガンドの原子 -> 置換部分構造の原子のマッピング）
+    # 接続点を見つける（MCSマッピング経由で対応付け）
+    # atom_pairs[0]はE23のMCS原子、atom_pairs[1]はE24のMCS原子
     connections = []
+    
+    # E23->E24のMCSマッピングを作成
+    e23_to_e24_map = {}
+    for e23_idx, e24_idx in zip(atom_pairs[0], atom_pairs[1]):
+        e23_to_e24_map[e23_idx] = e24_idx
     
     for i, ligand_atom_idx in enumerate(match):
         atom = ligand_no_h.GetAtomWithIdx(ligand_atom_idx)
@@ -379,19 +386,13 @@ def replace_ligand_substructure(
             neighbor_idx = bond.GetOtherAtomIdx(ligand_atom_idx)
             if neighbor_idx not in match_set:
                 # この原子は置換部分の外側にある
-                # atom_pairsから対応する置換部分構造の原子を見つける
                 # match内でのligand_atom_idxの位置を見つける
                 match_list = list(match)
                 pos_in_match = match_list.index(ligand_atom_idx)
                 
-                # atom_pairs[0]はマッチした部分構造側、atom_pairs[1]は置換部分構造側
-                # ただし、atom_pairsはE23とE24のマッチングなので、
-                # matchとatom_pairs[0]の対応を考慮する必要がある
-                
-                # atom_pairs[1]から対応する原子を取得
-                # この実装では、atom_pairs[0]の各インデックスがmatch内の位置に対応すると仮定
-                if pos_in_match < len(atom_pairs[1]):
-                    replacement_atom_idx = atom_pairs[1][pos_in_match]
+                # MCSマッピングを使用して対応するE24原子を見つける
+                if pos_in_match in e23_to_e24_map:
+                    replacement_atom_idx = e23_to_e24_map[pos_in_match]
                     connections.append((replacement_atom_idx, neighbor_idx, bond.GetBondType()))
     
     # RWMolオブジェクトを作成（編集可能な分子）
@@ -442,6 +443,71 @@ def replace_ligand_substructure(
     new_mol.AddConformer(conf)
     
     return new_mol
+
+def check_steric_clash(
+    mol: Chem.Mol,
+    min_distance: float = 2.0,
+    exclude_bonded: bool = True
+) -> Tuple[bool, List[Tuple[int, int, float]]]:
+    """
+    分子内の立体障害（原子間距離が異常に近い）をチェックします。
+    
+    Parameters
+    ----------
+    mol : Chem.Mol
+        チェックする分子
+    min_distance : float, default=2.0
+        許容最小原子間距離（Å）。これより近い非結合原子対は立体障害とみなされます
+    exclude_bonded : bool, default=True
+        結合している原子対を除外するかどうか
+    
+    Returns
+    -------
+    is_valid : bool
+        立体障害がない場合True、ある場合False
+    clashes : List[Tuple[int, int, float]]
+        立体障害がある原子対のリスト [(atom_idx1, atom_idx2, distance), ...]
+    
+    Examples
+    --------
+    >>> is_valid, clashes = check_steric_clash(mol, min_distance=2.0)
+    >>> if not is_valid:
+    ...     print(f"立体障害検出: {len(clashes)}箇所")
+    ...     for i, j, dist in clashes:
+    ...         print(f"  原子{i}-原子{j}: {dist:.2f}Å")
+    """
+    if mol.GetNumConformers() == 0:
+        raise ValueError("分子にコンフォーマー（3D座標）がありません")
+    
+    # 座標を取得
+    coords = mol.GetConformer().GetPositions()
+    n_atoms = mol.GetNumAtoms()
+    
+    # 結合している原子対のセットを作成
+    bonded_pairs = set()
+    if exclude_bonded:
+        for bond in mol.GetBonds():
+            i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            bonded_pairs.add((min(i, j), max(i, j)))
+    
+    # 全原子間距離を計算
+    distances = squareform(pdist(coords))
+    
+    # 立体障害を検出
+    clashes = []
+    for i in range(n_atoms):
+        for j in range(i + 1, n_atoms):
+            # 結合している原子対はスキップ
+            if exclude_bonded and (i, j) in bonded_pairs:
+                continue
+            
+            dist = distances[i, j]
+            if dist < min_distance:
+                clashes.append((i, j, dist))
+    
+    is_valid = len(clashes) == 0
+    return is_valid, clashes
+
 
 
 def integrated_substructure_replacement(
@@ -572,56 +638,72 @@ def integrated_substructure_replacement(
     from_coords = from_no_h.GetConformer().GetPositions()
     to_coords = to_no_h.GetConformer().GetPositions()
     
-    # リガンドのマッチ部分の座標を抽出
-    ligand_match_coords = ligand_coords[list(selected_match)]
-    
     # 各atom matchingパターンについて処理
     results = []
     for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
         print(f"\nパターン {pattern_idx} を処理中...")
         
-        # 1. リガンドのマッチ部分をE24に合わせる変換を計算
-        print(f"  Superimpose計算中...")
-        rot, tran = calculate_transformation(
-            ligand_match_coords,
-            to_coords,
-            atom_pairs  # [from, to] の順序
-        )
+        # 1. MCS対応原子の座標を抽出
+        # atom_pairs[0]はE23内のインデックス、atom_pairs[1]はE24内のインデックス
+        # リガンド中のE23部分のMCS原子の座標を取得
+        ligand_mcs_indices = [selected_match[i] for i in atom_pairs[0]]
+        ligand_mcs_coords = ligand_coords[ligand_mcs_indices]
         
-        # 2. リガンド全体の座標を変換
-        print(f"  リガンド座標を変換中...")
+        # E24のMCS原子の座標を取得
+        e24_mcs_coords = to_coords[atom_pairs[1]]
+        
+        # 2. E24をリガンドに合わせる変換を計算（MCS原子のみ使用）
+        print(f"  Superimpose計算中（MCS原子: {len(atom_pairs[0])}個）...")
+        from inverse_msmd.utils.bio_utils import SuperImposer
+        si = SuperImposer()
+        si.fit(e24_mcs_coords, ligand_mcs_coords)  # E24をリガンドに合わせる
+        rot, tran = si.rot_, si.tran_
+        
+        # 3. E24の座標を変換
+        print(f"  E24座標を変換中...")
         import copy
-        ligand_transformed_coords = np.dot(ligand_coords, rot) + tran
+        to_mol_copy = copy.deepcopy(to_no_h)
+        to_mol_transformed_coords = np.dot(to_coords, rot) + tran
         
-        # 変換後の座標をリガンドに設定
-        ligand_transformed = copy.deepcopy(ligand_no_h)
-        conf = ligand_transformed.GetConformer()
-        for i in range(ligand_transformed.GetNumAtoms()):
+        # 変換後の座標をE24に設定
+        conf = to_mol_copy.GetConformer()
+        for i in range(to_mol_copy.GetNumAtoms()):
             conf.SetAtomPosition(i, (
-                float(ligand_transformed_coords[i, 0]),
-                float(ligand_transformed_coords[i, 1]),
-                float(ligand_transformed_coords[i, 2])
+                float(to_mol_transformed_coords[i, 0]),
+                float(to_mol_transformed_coords[i, 1]),
+                float(to_mol_transformed_coords[i, 2])
             ))
         
-        # 3. リガンドの部分構造を元のE24で置換
-        # E24の座標系を基準とするため、E24は変換しない
+        # 4. リガンドの部分構造を変換後のE24で置換
+        # リガンドとタンパク質は元の座標系のまま
         print(f"  リガンド部分構造を置換中...")
         replaced_ligand = replace_ligand_substructure(
-            ligand_transformed,
+            ligand_no_h,
             selected_match,
-            to_no_h,
+            to_mol_copy,
             atom_pairs
         )
         
-        # 4. タンパク質にも同じ変換を適用
-        print(f"  タンパク質座標を変換中...")
+        # 5. 立体障害チェック
+        print(f"  立体障害チェック中...")
+        is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
+        
+        if not is_valid:
+            print(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
+            for atom_i, atom_j, dist in clashes:
+                atom_i_symbol = replaced_ligand.GetAtomWithIdx(atom_i).GetSymbol()
+                atom_j_symbol = replaced_ligand.GetAtomWithIdx(atom_j).GetSymbol()
+                print(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
+            print(f"  → このパターンをスキップします")
+            continue
+        
+        print(f"  ✓ 立体障害なし")
+        
+        # 6. タンパク質は変換しない（元の座標系のまま）
         protein_copy = copy.deepcopy(protein)
-        protein_coords = PDB.get_attr(protein_copy, "coord")
-        protein_transformed_coords = np.dot(protein_coords, rot) + tran
-        PDB.set_attr(protein_copy, "coord", protein_transformed_coords)
         transformed_protein = protein_copy
         
-        # 5. ファイルを出力
+        # 7. ファイルを出力
         ligand_output = output_path / f"pattern_{pattern_idx}_ligand_replaced.sdf"
         protein_output = output_path / f"pattern_{pattern_idx}_protein_aligned.pdb"
         
