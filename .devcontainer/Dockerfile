@@ -6,3 +6,10 @@ RUN pip install mypy pytest isort ipykernel
 RUN apt update 
 RUN apt install -y openssh-client
 
+RUN apt install libxrender1 # for rdkit visualization
+
+# pytest Segmentation Fault対策
+# localeを適切に設定することでreadlineモジュールのクラッシュを回避
+RUN apt-get update && apt-get install -y locales && \
+    locale-gen en_US.UTF-8 && \
+    update-locale LANG=en_US.UTF-8
