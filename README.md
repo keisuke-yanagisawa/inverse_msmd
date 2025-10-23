@@ -11,9 +11,9 @@
 - **統合アライメントAPI**: 原子マッチングと構造重ね合わせを一括で実行する統合API
 - **構造重ね合わせ**: BioPythonベースの構造重ね合わせ（scikit-learn互換インターフェース）
 - **原子マッチング**: MCS（最大共通部分構造）ベースの原子ペア検出（アイソトープラベル対応）
+- **統合部分構造置換** ✅: リガンドの部分構造置換とタンパク質座標変換を統合
 - **PDB操作**: PDBファイルの読み込み、属性の取得・設定、保存機能
 - **空間計算**: 球体の体積推定などの空間計算ユーティリティ
-- **統合部分構造置換** 🚧: リガンドの部分構造置換とタンパク質座標変換を統合（開発中）
 - **パス処理**: 環境変数とチルダ展開に対応したパス処理
 
 ## インストール
@@ -74,6 +74,53 @@ for result in results:
           f"{result.atom_pairs.shape[1]} 個の原子がマッチ")
 ```
 
+### 統合部分構造置換API
+
+リガンドの部分構造を別の部分構造で置換し、タンパク質構造も適切に座標変換します：
+
+```python
+from inverse_msmd.substructure_replacement import integrated_substructure_replacement
+
+# E23をE24に置換
+results = integrated_substructure_replacement(
+    ligand_file="data/atom_matching/4hw3_A_lig.sdf",
+    protein_file="data/sample_proteins/4hw3_A.pdb",
+    from_file="data/sample_probes/E23",  # 拡張子なし
+    to_file="data/sample_probes/E24",    # 拡張子なし
+    output_dir="output/integrated/",
+    match_index=0  # オプション: 特定のマッチを指定
+)
+
+# 結果の確認
+for i, result in enumerate(results):
+    print(f"パターン {i}:")
+    print(f"  リガンド: {result['ligand_file']}")
+
+**重要な仕様**:
+- 統合部分構造置換では、**置換後の部分構造（to_file）の座標系を基準**とします
+- リガンドとタンパク質が置換後の部分構造に合わせて変換されます
+- これにより、MSMDプロファイルとの対応関係が維持されます
+    print(f"  タンパク質: {result['protein_file']}")
+```
+
+**CLIからの使用:**
+
+```bash
+python scripts/integrated_replacement.py \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --from-file data/sample_probes/E23 \
+    --to-file data/sample_probes/E24 \
+    --output output/integrated/ \
+    --match-index 0 \
+    --verbose
+```
+
+**出力ファイル:**
+- `pattern_N_ligand_replaced.sdf`: 部分構造が置換されたリガンド
+- `pattern_N_protein_aligned.pdb`: 座標変換されたタンパク質
+- `substructure_matches.png`: 複数マッチ時の可視化画像（match_index未指定時）
+
 ### 低レベルAPI
 
 より細かい制御が必要な場合は、低レベルAPIを使用できます：
@@ -109,13 +156,18 @@ PDB.save(protein, "aligned_protein.pdb")
 
 ### サンプルスクリプト
 
-パッケージには、サンプルデータ（[`data/`](data/)ディレクトリ）付きのサンプルスクリプト（[`examples/`](examples/)ディレクトリ）が含まれています：
+パッケージには、サンプルデータ（[`data/`](data/)ディレクトリ）付きのサンプルスクリプト（[`examples/`](examples/)ディレクトリ）とツール（[`scripts/`](scripts/)ディレクトリ）が含まれています：
 
+**サンプルスクリプト:**
 - [`examples/integrated_alignment.py`](examples/integrated_alignment.py): ⭐ 統合アライメントAPIの使用例（推奨）
 - [`examples/calculate_matching.py`](examples/calculate_matching.py): マッチングスコア計算の例
 - [`examples/add_isotope_labels.py`](examples/add_isotope_labels.py): アイソトープラベル付与ツール
 
-詳細な使用方法については、各スクリプト内のコメントと[`examples/README.md`](examples/README.md)を参照してください。
+**コマンドラインツール:**
+- [`scripts/integrated_replacement.py`](scripts/integrated_replacement.py): ⭐ 統合部分構造置換ツール（新機能）
+- [`scripts/replace_substructure.py`](scripts/replace_substructure.py): 部分構造置換ツール
+
+詳細な使用方法については、各スクリプト内のコメントと[`examples/README.md`](examples/README.md)、[`scripts/README.md`](scripts/README.md)を参照してください。
 
 ## ディレクトリ構造
 
@@ -128,9 +180,11 @@ inverse_msmd/
 ├── inverse_msmd/           # メインパッケージ
 │   ├── __init__.py        # パブリックAPI
 │   ├── alignment.py       # アライメント機能
+│   ├── substructure_replacement.py  # 統合部分構造置換
 │   └── utils/             # ユーティリティモジュール
 │       ├── __init__.py
 │       ├── bio_utils.py   # BioPythonユーティリティ
+│       ├── mol_utils.py   # RDKitユーティリティ
 │       ├── spatial_utils.py  # 空間計算ユーティリティ
 │       └── path_utils.py  # パス処理ユーティリティ
 ├── data/                   # サンプルデータ
@@ -143,7 +197,19 @@ inverse_msmd/
 │   ├── integrated_alignment.py  # 統合API使用例
 │   ├── calculate_matching.py  # スコア計算例
 │   └── add_isotope_labels.py  # アイソトープラベル付与
+├── scripts/                # コマンドラインツール
+│   ├── README.md          # ツールの説明
+│   ├── integrated_replacement.py  # 統合部分構造置換CLI
+│   ├── replace_substructure.py  # 部分構造置換ツール
+│   └── add_isotope_labels.py  # アイソトープラベル付与
+├── docs/                   # ドキュメント
+│   ├── implementation_progress.md  # 実装進捗記録
+│   ├── integrated_replacement_plan.md  # 統合機能設計
+│   └── testing_checklist.md  # テスト手順
 └── tests/                  # テストスイート
+    ├── conftest.py        # 共通フィクスチャ
+    ├── unit/              # 単体テスト
+    ├── integration/       # 統合テスト
     └── data/              # テストデータ（最小限）
 ```
 

@@ -261,10 +261,10 @@ replaced_ligand = replace_ligand_substructure(...)
 - [x] T3: 複数マッチ可視化関数実装
 - [x] T4: Atom Matching関数実装
 
-**Phase 2: 座標変換機能** ⏳ 未着手 (0/3)
-- [ ] T5: Superimpose計算関数実装
-- [ ] T6: タンパク質変換関数実装
-- [ ] T7: リガンド置換関数実装
+**Phase 2: 座標変換機能** ✅ 完了 (3/3)
+- [x] T5: Superimpose計算関数実装
+- [x] T6: タンパク質変換関数実装
+- [x] T7: リガンド置換関数実装
 
 **Phase 3: 統合とインターフェース** ⏳ 未着手 (0/3)
 - [ ] T8-9: 統合ワークフロー関数実装
@@ -276,7 +276,7 @@ replaced_ligand = replace_ligand_substructure(...)
 - [ ] T13: エラーハンドリングとバリデーション追加
 - [ ] T14: ドキュメントとusage example作成
 
-**進捗率**: 29% (4/14タスク完了)
+**進捗率**: 50% (7/14タスク完了)
 
 ## 使用例
 

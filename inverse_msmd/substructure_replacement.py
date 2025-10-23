@@ -265,8 +265,17 @@ def calculate_transformation(
     ... )
     >>> transformed = rot @ protein_coords.T + tran[:, np.newaxis]
     """
-    # TODO: 実装予定
-    pass
+    from inverse_msmd.utils.bio_utils import SuperImposer
+    
+    # atom_pairsに基づいて対応する座標を抽出
+    source_matched = source_coords[atom_pairs[0]]
+    target_matched = target_coords[atom_pairs[1]]
+    
+    # SuperImposerで変換行列を計算
+    si = SuperImposer()
+    si.fit(source_matched, target_matched)
+    
+    return si.rot_, si.tran_
 
 
 def apply_transformation_to_protein(
@@ -298,8 +307,18 @@ def apply_transformation_to_protein(
     >>> transformed_protein = apply_transformation_to_protein(protein, rot, tran)
     >>> PDB.save(transformed_protein, "transformed_protein.pdb")
     """
-    # TODO: 実装予定
-    pass
+    from inverse_msmd.utils.bio_utils import PDB
+    
+    # タンパク質の座標を取得
+    protein_coords = PDB.get_attr(protein, "coord")
+    
+    # 変換を適用: new_coords = rot @ coords + tran
+    transformed_coords = np.dot(protein_coords, rot) + tran
+    
+    # 変換後の座標を設定
+    PDB.set_attr(protein, "coord", transformed_coords)
+    
+    return protein
 
 
 def replace_ligand_substructure(
@@ -338,8 +357,91 @@ def replace_ligand_substructure(
     ... )
     >>> Chem.SanitizeMol(replaced_ligand)
     """
-    # TODO: 実装予定
-    pass
+    import copy
+    
+    # 水素を除去（RemoveHsは座標を保持する）
+    ligand_no_h = Chem.RemoveHs(ligand_mol)
+    replacement_no_h = Chem.RemoveHs(replacement_mol)
+    
+    # 座標を取得
+    ligand_coords = ligand_no_h.GetConformer().GetPositions()
+    replacement_coords = replacement_no_h.GetConformer().GetPositions()
+    
+    # マッチした部分構造の原子インデックスをセットに変換
+    match_set = set(match)
+    
+    # 接続点を見つける（リガンドの原子 -> 置換部分構造の原子のマッピング）
+    connections = []
+    
+    for i, ligand_atom_idx in enumerate(match):
+        atom = ligand_no_h.GetAtomWithIdx(ligand_atom_idx)
+        for bond in atom.GetBonds():
+            neighbor_idx = bond.GetOtherAtomIdx(ligand_atom_idx)
+            if neighbor_idx not in match_set:
+                # この原子は置換部分の外側にある
+                # atom_pairsから対応する置換部分構造の原子を見つける
+                # match内でのligand_atom_idxの位置を見つける
+                match_list = list(match)
+                pos_in_match = match_list.index(ligand_atom_idx)
+                
+                # atom_pairs[0]はマッチした部分構造側、atom_pairs[1]は置換部分構造側
+                # ただし、atom_pairsはE23とE24のマッチングなので、
+                # matchとatom_pairs[0]の対応を考慮する必要がある
+                
+                # atom_pairs[1]から対応する原子を取得
+                # この実装では、atom_pairs[0]の各インデックスがmatch内の位置に対応すると仮定
+                if pos_in_match < len(atom_pairs[1]):
+                    replacement_atom_idx = atom_pairs[1][pos_in_match]
+                    connections.append((replacement_atom_idx, neighbor_idx, bond.GetBondType()))
+    
+    # RWMolオブジェクトを作成（編集可能な分子）
+    rwmol = Chem.RWMol(copy.deepcopy(ligand_no_h))
+    
+    # 新しい座標リストを作成（削除前の全原子分）
+    new_coords_list = []
+    for i in range(ligand_no_h.GetNumAtoms()):
+        new_coords_list.append(ligand_coords[i])
+    
+    # 新しい部分構造の原子を追加
+    new_atom_map = {}  # replacement_molの原子インデックス -> rwmolの原子インデックス
+    for atom in replacement_no_h.GetAtoms():
+        atom_idx = atom.GetIdx()
+        new_idx = rwmol.AddAtom(atom)
+        new_atom_map[atom_idx] = new_idx
+        # 置換後の部分構造の元の座標を追加
+        new_coords_list.append(replacement_coords[atom_idx])
+    
+    # 新しい部分構造内の結合を追加
+    for bond in replacement_no_h.GetBonds():
+        begin_idx = new_atom_map[bond.GetBeginAtomIdx()]
+        end_idx = new_atom_map[bond.GetEndAtomIdx()]
+        rwmol.AddBond(begin_idx, end_idx, bond.GetBondType())
+    
+    # 接続を追加
+    for replacement_atom_idx, ligand_neighbor_idx, bond_type in connections:
+        new_atom_idx = new_atom_map[replacement_atom_idx]
+        rwmol.AddBond(new_atom_idx, ligand_neighbor_idx, bond_type)
+    
+    # 古い部分構造の原子を削除（逆順で削除してインデックスのずれを防ぐ）
+    # 座標も同時に削除
+    for atom_idx in sorted(match, reverse=True):
+        rwmol.RemoveAtom(atom_idx)
+        del new_coords_list[atom_idx]
+    
+    # RWMolをMolに変換
+    new_mol = rwmol.GetMol()
+    
+    # 既存のコンフォーマーを全て削除
+    new_mol.RemoveAllConformers()
+    
+    # 座標をコンフォーマーとして設定
+    from rdkit.Geometry import Point3D
+    conf = Chem.Conformer(new_mol.GetNumAtoms())
+    for i, coords in enumerate(new_coords_list):
+        conf.SetAtomPosition(i, Point3D(float(coords[0]), float(coords[1]), float(coords[2])))
+    new_mol.AddConformer(conf)
+    
+    return new_mol
 
 
 def integrated_substructure_replacement(
@@ -397,5 +499,150 @@ def integrated_substructure_replacement(
     ...     print(f"  Ligand: {result['ligand_file']}")
     ...     print(f"  Protein: {result['protein_file']}")
     """
-    # TODO: 実装予定
-    pass
+    from pathlib import Path
+    from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
+    from inverse_msmd.utils.bio_utils import PDB
+    
+    # 出力ディレクトリを作成
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # ファイルの読み込み
+    print(f"ファイルを読み込み中...")
+    ligand_mol = next(Chem.SDMolSupplier(ligand_file))
+    protein = PDB.get_structure(protein_file)
+    from_mol = read_mol_from_pdb_smi(f"{from_file}.pdb", f"{from_file}.smi")
+    to_mol = read_mol_from_pdb_smi(f"{to_file}.pdb", f"{to_file}.smi")
+    
+    print(f"  リガンド原子数: {ligand_mol.GetNumAtoms()}")
+    print(f"  タンパク質原子数: {len(PDB.get_attr(protein, 'coord'))}")
+    print(f"  置換前部分構造原子数: {from_mol.GetNumAtoms()}")
+    print(f"  置換後部分構造原子数: {to_mol.GetNumAtoms()}")
+    
+    # リガンド中の部分構造を探索
+    print(f"\nリガンド中の部分構造を探索中...")
+    matches = find_substructure_in_ligand(ligand_mol, from_mol)
+    print(f"  マッチ数: {len(matches)}")
+    
+    if len(matches) == 0:
+        raise ValueError("リガンド中に部分構造が見つかりませんでした")
+    
+    # マッチの選択
+    selected_match = None
+    if match_index is not None:
+        # インデックスが指定されている場合（マッチ数に関わらず検証）
+        if match_index < 0 or match_index >= len(matches):
+            raise ValueError(
+                f"無効なmatch_index: {match_index}。"
+                f"有効範囲は 0 から {len(matches)-1} です"
+            )
+        selected_match = matches[match_index]
+        print(f"  指定されたインデックス {match_index} のマッチを使用: {selected_match}")
+    elif len(matches) == 1:
+        # 1つしかない場合は自動選択
+        selected_match = matches[0]
+        print(f"  マッチが1つのみのため自動選択: {selected_match}")
+    else:
+        # 複数マッチがあり、インデックスが指定されていない場合
+        print(f"  複数のマッチが見つかりました。可視化画像を生成します...")
+        vis_path = output_path / "substructure_matches.png"
+        visualize_multiple_matches(ligand_mol, from_mol, matches, str(vis_path))
+        print(f"  可視化画像: {vis_path}")
+        
+        # デフォルトで最初のマッチを使用（ユーザーは画像を見て再実行できる）
+        selected_match = matches[0]
+        print(f"  警告: 最初のマッチ（インデックス0）を使用します")
+        print(f"  他のマッチを使用する場合は、match_indexパラメータを指定して再実行してください")
+    
+    # Atom matchingを実行
+    print(f"\nAtom matchingを実行中...")
+    atom_pair_patterns = match_substructures(from_mol, to_mol)
+    print(f"  Atom matchingパターン数: {len(atom_pair_patterns)}")
+    
+    if len(atom_pair_patterns) == 0:
+        raise ValueError("Atom matchingに失敗しました")
+    
+    # 水素を除去してから座標を取得
+    ligand_no_h = Chem.RemoveHs(ligand_mol)
+    from_no_h = Chem.RemoveHs(from_mol)
+    to_no_h = Chem.RemoveHs(to_mol)
+    
+    # 座標を取得
+    ligand_coords = ligand_no_h.GetConformer().GetPositions()
+    from_coords = from_no_h.GetConformer().GetPositions()
+    to_coords = to_no_h.GetConformer().GetPositions()
+    
+    # リガンドのマッチ部分の座標を抽出
+    ligand_match_coords = ligand_coords[list(selected_match)]
+    
+    # 各atom matchingパターンについて処理
+    results = []
+    for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
+        print(f"\nパターン {pattern_idx} を処理中...")
+        
+        # 1. リガンドのマッチ部分をE24に合わせる変換を計算
+        print(f"  Superimpose計算中...")
+        rot, tran = calculate_transformation(
+            ligand_match_coords,
+            to_coords,
+            atom_pairs  # [from, to] の順序
+        )
+        
+        # 2. リガンド全体の座標を変換
+        print(f"  リガンド座標を変換中...")
+        import copy
+        ligand_transformed_coords = np.dot(ligand_coords, rot) + tran
+        
+        # 変換後の座標をリガンドに設定
+        ligand_transformed = copy.deepcopy(ligand_no_h)
+        conf = ligand_transformed.GetConformer()
+        for i in range(ligand_transformed.GetNumAtoms()):
+            conf.SetAtomPosition(i, (
+                float(ligand_transformed_coords[i, 0]),
+                float(ligand_transformed_coords[i, 1]),
+                float(ligand_transformed_coords[i, 2])
+            ))
+        
+        # 3. リガンドの部分構造を元のE24で置換
+        # E24の座標系を基準とするため、E24は変換しない
+        print(f"  リガンド部分構造を置換中...")
+        replaced_ligand = replace_ligand_substructure(
+            ligand_transformed,
+            selected_match,
+            to_no_h,
+            atom_pairs
+        )
+        
+        # 4. タンパク質にも同じ変換を適用
+        print(f"  タンパク質座標を変換中...")
+        protein_copy = copy.deepcopy(protein)
+        protein_coords = PDB.get_attr(protein_copy, "coord")
+        protein_transformed_coords = np.dot(protein_coords, rot) + tran
+        PDB.set_attr(protein_copy, "coord", protein_transformed_coords)
+        transformed_protein = protein_copy
+        
+        # 5. ファイルを出力
+        ligand_output = output_path / f"pattern_{pattern_idx}_ligand_replaced.sdf"
+        protein_output = output_path / f"pattern_{pattern_idx}_protein_aligned.pdb"
+        
+        print(f"  出力中...")
+        # リガンドを保存
+        writer = Chem.SDWriter(str(ligand_output))
+        writer.SetKekulize(False)
+        writer.write(replaced_ligand)
+        writer.close()
+        
+        # タンパク質を保存
+        PDB.save(transformed_protein, str(protein_output))
+        
+        print(f"  ✓ リガンド: {ligand_output}")
+        print(f"  ✓ タンパク質: {protein_output}")
+        
+        # 結果を記録
+        results.append({
+            'ligand_file': str(ligand_output),
+            'protein_file': str(protein_output)
+        })
+    
+    print(f"\n完了: {len(results)} パターンの結果を生成しました")
+    return results

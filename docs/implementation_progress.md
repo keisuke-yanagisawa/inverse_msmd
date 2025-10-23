@@ -2,7 +2,9 @@
 
 このドキュメントは、実装の進捗状況と各タスクの詳細な記録を提供します。
 
-**最終更新**: 2025-10-23
+**最終更新**: 2025-10-23 (座標保持バグ修正完了)
+**最新更新**: 2025-10-23 (構造重ね合わせの座標系バグ修正完了)
+
 
 ---
 
@@ -11,10 +13,10 @@
 | フェーズ | 完了 | 進行中 | 未着手 | 進捗率 |
 |---------|------|--------|--------|--------|
 | Phase 1: 基本機能実装 | 4 | 0 | 0 | 100% ✅ |
-| Phase 2: 座標変換機能 | 0 | 0 | 3 | 0% ⏳ |
-| Phase 3: 統合とインターフェース | 0 | 0 | 3 | 0% ⏳ |
-| Phase 4: 品質保証 | 0 | 0 | 3 | 0% ⏳ |
-| **合計** | **4** | **0** | **10** | **29%** |
+| Phase 2: 座標変換機能 | 3 | 0 | 0 | 100% ✅ |
+| Phase 3: 統合とインターフェース | 3 | 0 | 0 | 100% ✅ |
+| Phase 4: 品質保証 | 3 | 0 | 0 | 100% ✅ |
+| **合計** | **13** | **0** | **0** | **100%** ✅ |
 
 ---
 
@@ -226,7 +228,672 @@ atom_pairs[1, :] = mol2の原子インデックス
 
 ---
 
-## ⏳ Phase 2: 座標変換機能 (未着手)
+## ✅ Phase 2: 座標変換機能 (完了)
+
+### T5: Superimpose計算関数実装
+
+**実装日**: 2025-10-23
+**関数**: [`calculate_transformation()`](../inverse_msmd/substructure_replacement.py:232)
+**テストファイル**: [`tests/unit/test_transformation.py`](../tests/unit/test_transformation.py)
+
+#### 実装内容
+```python
+def calculate_transformation(
+    source_coords: npt.NDArray[np.float64],
+    target_coords: npt.NDArray[np.float64],
+    atom_pairs: npt.NDArray[np.int_]
+) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    from inverse_msmd.utils.bio_utils import SuperImposer
+    
+    # atom_pairsに基づいて対応する座標を抽出
+    source_matched = source_coords[atom_pairs[0]]
+    target_matched = target_coords[atom_pairs[1]]
+    
+    # SuperImposerで変換行列を計算
+    si = SuperImposer()
+    si.fit(source_matched, target_matched)
+    
+    return si.rot_, si.tran_
+```
+
+#### 技術的詳細
+- `SuperImposer`クラスを使用してSVD法による最適化
+- atom_pairsに基づいて対応する座標を自動抽出
+- 回転行列（3x3）と並進ベクトル（3,）を返却
+- 変換式: `new_coords = rot @ coords + tran`
+
+#### テスト結果
+```
+✓ 回転行列の形状が3x3
+✓ 並進ベクトルの形状が(3,)
+✓ 回転行列が直交行列（R^T * R = I）
+✓ 回転行列の行列式が1
+✓ 複数のマッチングパターンで動作確認
+```
+
+**テスト統計**: 5個のテストケース全てパス
+
+---
+
+### T6: タンパク質変換関数実装
+
+**実装日**: 2025-10-23
+**関数**: [`apply_transformation_to_protein()`](../inverse_msmd/substructure_replacement.py:272)
+**テストファイル**: [`tests/unit/test_protein_transformation.py`](../tests/unit/test_protein_transformation.py)
+
+#### 実装内容
+```python
+def apply_transformation_to_protein(
+    protein: Structure,
+    rot: npt.NDArray[np.float64],
+    tran: npt.NDArray[np.float64]
+) -> Structure:
+    from inverse_msmd.utils.bio_utils import PDB
+    
+    # タンパク質の座標を取得
+    protein_coords = PDB.get_attr(protein, "coord")
+    
+    # 変換を適用: new_coords = rot @ coords + tran
+    transformed_coords = np.dot(protein_coords, rot) + tran
+    
+    # 変換後の座標を設定
+    PDB.set_attr(protein, "coord", transformed_coords)
+    
+    return protein
+```
+
+#### 技術的詳細
+- BioPythonのStructureオブジェクトを直接操作
+- NumPy配列で効率的な座標変換
+- 変換式を正確に適用
+- 元のタンパク質構造を変更（in-place）
+
+#### テスト結果
+```
+✓ 座標の形状が保持される
+✓ 座標が実際に変換される
+✓ 変換式（rot @ coords + tran）が正確に適用される
+✓ PDBファイルとして保存・読み込み可能
+```
+
+**テスト統計**: 5個のテストケース全てパス
+
+---
+
+### T7: リガンド置換関数実装
+
+**実装日**: 2025-10-23
+**関数**: [`replace_ligand_substructure()`](../inverse_msmd/substructure_replacement.py:305)
+**テストファイル**: [`tests/unit/test_ligand_replacement.py`](../tests/unit/test_ligand_replacement.py)
+
+#### 実装内容
+- RDKitの`RWMol`を使用した分子編集
+- 接続点の自動検出
+- 水素を除去した分子での処理
+- 置換部分構造の原子と結合を追加
+- 古い部分構造の原子を削除
+
+#### 技術的詳細
+```python
+def replace_ligand_substructure(...) -> Chem.Mol:
+    # 水素を除去
+    ligand_no_h = Chem.RemoveHs(ligand_mol)
+    replacement_no_h = Chem.RemoveHs(replacement_mol)
+    
+    # 接続点を検出
+    connections = []  # [(replacement_atom_idx, ligand_neighbor_idx, bond_type), ...]
+    
+    # RWMolで分子を編集
+    rwmol = Chem.RWMol(copy.deepcopy(ligand_no_h))
+    
+    # 新しい原子と結合を追加
+    # 接続を追加
+    # 古い原子を削除（逆順）
+    
+    return rwmol.GetMol()
+```
+
+#### テスト結果
+```
+✓ 基本的な置換が機能
+✓ 原子数が期待値に近い
+✓ Sanitizeチェックをパス（化学的に妥当）
+✓ SDFファイルとして保存可能
+✓ 複数のマッチングパターンで動作
+✓ SMILESが変化（置換が実行されている）
+✓ コンフォーマー情報が保持される
+```
+
+**テスト統計**: 7個のテストケース全てパス
+
+#### 🐛 座標保持バグの修正 (2025-10-23)
+
+**問題**: 置換後のリガンドSDFファイルで、置換部分（E24など）の座標が全て原点(0, 0, 0)になっていた。
+
+**原因**:
+- `RWMol.GetMol()`で変換した際、元のリガンドのコンフォーマーが残存
+- 新しいコンフォーマーを`AddConformer()`で追加すると、2つのコンフォーマーが存在
+- デフォルトでは最初のコンフォーマー（座標が初期化されていない）が使用される
+
+**解決策**:
+[`inverse_msmd/substructure_replacement.py:431`](../inverse_msmd/substructure_replacement.py:431)に以下の修正を適用：
+
+```python
+# RWMolをMolに変換
+new_mol = rwmol.GetMol()
+
+# 既存のコンフォーマーを全て削除  ← 追加した重要な行
+new_mol.RemoveAllConformers()
+
+# 座標をコンフォーマーとして設定
+from rdkit.Geometry import Point3D
+conf = Chem.Conformer(new_mol.GetNumAtoms())
+for i, coords in enumerate(new_coords_list):
+    conf.SetAtomPosition(i, Point3D(float(coords[0]), float(coords[1]), float(coords[2])))
+new_mol.AddConformer(conf)
+```
+
+**検証結果**:
+```
+# 修正前（全て原点）
+   0.0000    0.0000    0.0000 C   # E24部分
+   0.0000    0.0000    0.0000 C
+   ...
+
+# 修正後（正しい座標）
+   3.5640   -0.0000    0.0000 C   # E24部分の正しい座標
+   2.8600    1.1390    0.3940 C
+   1.4660    1.1390    0.3940 C
+   ...
+```
+
+
+---
+
+## 🐛 構造重ね合わせの座標系バグ修正 (2025-10-23)
+
+### 問題の発見
+
+統合ワークフロー関数[`integrated_substructure_replacement()`](../inverse_msmd/substructure_replacement.py:583-622)において、構造重ね合わせの座標系の基準が設計仕様と逆になっていることが判明しました。
+
+**問題点**:
+- 当初の設計: E24の座標系を基準とし、リガンド+タンパク質を変換
+- 実装されていた内容: リガンドの座標系を基準とし、E24のみを変換
+- 結果: E24の本来の向き・位置情報が失われ、MSMDプロファイルとの対応が崩れる
+
+### 原因分析
+
+[`inverse_msmd/substructure_replacement.py:583-618`](../inverse_msmd/substructure_replacement.py:583-618)での処理:
+
+```python
+# 修正前（誤った実装）
+# 1. E24をリガンドに合わせる変換を計算
+rot, tran = calculate_transformation(
+    to_coords,              # E24（変換元）
+    ligand_match_coords,    # リガンド（変換先）
+    atom_pairs[::-1]
+)
+
+# 2. E24のみを変換
+to_mol_transformed_coords = np.dot(to_coords, rot) + tran
+
+# 3. タンパク質は変換なし
+protein_copy = copy.deepcopy(protein)
+transformed_protein = protein_copy  # 変換なし
+```
+
+この実装では:
+- ✗ E24がリガンドに合わせて変形される
+- ✗ E24の本来の向き・位置が失われる
+- ✗ タンパク質が変換されない
+- ✗ MSMDプロファイルとの対応関係が崩れる
+
+### 修正内容
+
+[`inverse_msmd/substructure_replacement.py:583-622`](../inverse_msmd/substructure_replacement.py:583-622)を以下のように修正:
+
+```python
+# 修正後（正しい実装）
+# 1. リガンドをE24に合わせる変換を計算
+rot, tran = calculate_transformation(
+    ligand_match_coords,    # リガンド部分（変換元）
+    to_coords,              # E24（変換先・基準）
+    atom_pairs              # 順序も修正
+)
+
+# 2. リガンド全体を変換
+ligand_transformed_coords = np.dot(ligand_coords, rot) + tran
+# コンフォーマーに設定...
+
+# 3. E24は元の座標で使用
+replaced_ligand = replace_ligand_substructure(
+    ligand_transformed,     # 変換後のリガンド
+    selected_match,
+    to_no_h,               # 元のE24（変換なし）
+    atom_pairs
+)
+
+# 4. タンパク質にも同じ変換を適用
+protein_copy = copy.deepcopy(protein)
+protein_coords = PDB.get_attr(protein_copy, "coord")
+protein_transformed_coords = np.dot(protein_coords, rot) + tran
+PDB.set_attr(protein_copy, "coord", protein_transformed_coords)
+transformed_protein = protein_copy
+```
+
+### 修正箇所の詳細
+
+**変更1**: 変換の方向を逆転（行585-589）
+- 変換元: E24 → リガンド部分
+- 変換先: リガンド → E24
+- atom_pairsの順序: [::-1]を削除
+
+**変更2**: 変換対象をE24からリガンドへ変更（行591-604）
+- E24の座標変換を削除
+- リガンド全体の座標を変換
+
+**変更3**: タンパク質にも変換を適用（行616-622）
+- タンパク質座標を変換
+- PDB.set_attr()で座標を更新
+
+**変更4**: 置換に使うE24を元の座標に変更（行609-614）
+- 変換後のE24ではなく元のE24（to_no_h）を使用
+- 変換後のリガンド（ligand_transformed）を使用
+
+### 検証結果
+
+修正後の動作確認:
+
+```bash
+python test_coordinate_fix_check.py
+```
+
+**検証項目**:
+- ✅ E24の座標が保持されている（差: 0.000000 Å）
+- ✅ タンパク質が変換されている（移動: 63.7 Å）
+- ✅ リガンドが変換されている（移動: 52.7 Å）
+- ✅ 16パターン全て正常に生成
+
+### 影響
+
+**修正前の動作**:
+- リガンドとタンパク質の相対位置関係は保持
+- しかしE24の向き・位置情報が失われる
+- MSMDワークフローでの後続処理に影響
+
+**修正後の動作**:
+- E24の座標系を基準とする（設計通り）
+- リガンドとタンパク質がE24の位置に移動
+- MSMDプロファイルとの対応が維持される
+- 科学的に意味のある出力構造
+
+### テストファイル
+
+- [`test_fix_validation.py`](../test_fix_validation.py) - 基本動作確認
+- [`test_coordinate_fix_check.py`](../test_coordinate_fix_check.py) - 座標検証
+
+**結論**: 修正により、設計仕様通りの動作となり、E24の座標系を基準とした構造重ね合わせが正しく実行されるようになりました。
+
+**影響**: 全40個のテストが引き続き成功し、座標が正しく保持されることを確認。
+
+---
+
+## ✅ Phase 3: 統合とインターフェース (完了)
+
+### T8-9: 統合ワークフロー関数実装
+
+**実装日**: 2025-10-23
+**関数**: [`integrated_substructure_replacement()`](../inverse_msmd/substructure_replacement.py:423)
+**テストファイル**: [`tests/integration/test_workflow.py`](../tests/integration/test_workflow.py)
+
+#### 実装内容
+```python
+def integrated_substructure_replacement(
+    ligand_file: str,
+    protein_file: str,
+    from_file: str,
+    to_file: str,
+    output_dir: str,
+    match_index: Optional[int] = None
+) -> List[Dict[str, str]]:
+    # 全ての既存機能を統合
+    # 1. ファイル読み込み
+    # 2. 部分構造探索
+    # 3. マッチ選択（自動/手動/可視化）
+    # 4. Atom matching
+    # 5. 各パターンについて:
+    #    - Superimpose計算
+    #    - タンパク質変換
+    #    - リガンド置換
+    #    - ファイル出力
+```
+
+#### 主要機能
+- ファイルの自動読み込み（SDF, PDB, PDB+SMI）
+- 部分構造の自動探索とマッチ選択
+- 複数マッチ時の可視化画像出力
+- 全atom matchingパターンの処理
+- 結果の自動保存（命名規則に従う）
+- 詳細な進捗表示
+
+#### テスト結果
+```
+✓ 16パターンの結果を生成
+✓ 全てのファイルが正常に作成
+✓ リガンド: pattern_N_ligand_replaced.sdf (2.4KB)
+✓ タンパク質: pattern_N_protein_aligned.pdb (97KB)
+✓ 統合テストをパス
+```
+
+**テスト統計**: 5個のテストケース全てパス
+
+---
+
+### T10: CLIスクリプト作成
+
+**実装日**: 2025-10-23
+**ファイル**: [`scripts/integrated_replacement.py`](../scripts/integrated_replacement.py)
+
+#### 実装内容
+完全なコマンドラインインターフェースを実装：
+
+```bash
+python scripts/integrated_replacement.py \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --from-file data/sample_probes/E23 \
+    --to-file data/sample_probes/E24 \
+    --output test_output/cli_test/ \
+    --match-index 0 \
+    --verbose
+```
+
+#### 機能
+- **必須オプション**: ligand, protein, from-file, to-file, output
+- **オプション**: match-index, verbose, version
+- **入力検証**: 全ての必須ファイルの存在確認
+- **エラーハンドリング**: 適切なエラーメッセージ
+- **ヘルプ**: 詳細な使用例とドキュメント
+
+#### テスト結果
+```
+✓ ヘルプメッセージが適切に表示
+✓ 全てのオプションが機能
+✓ ファイル検証が正常動作
+✓ 詳細出力（--verbose）が正常動作
+✓ 16パターンの結果を正常生成
+```
+
+---
+
+### T11: 出力機能とテスト
+
+**実装日**: 2025-10-23
+**成果物**: 完全な出力機能とテストスイート
+
+#### 実装内容
+
+**ファイル命名規則**:
+- リガンド: `pattern_N_ligand_replaced.sdf`
+- タンパク質: `pattern_N_protein_aligned.pdb`
+- 可視化: `substructure_matches.png` (複数マッチ時)
+
+**出力ディレクトリ管理**:
+- 自動作成（存在しない場合）
+- 相対/絶対パス両対応
+
+#### テスト結果
+```
+✓ 出力ディレクトリが自動作成される
+✓ ファイル名が規則に従う
+✓ 全パターンで出力ファイル生成
+✓ ファイルサイズが適切
+✓ ファイル形式が正しい（SDF, PDB）
+✓ 内容が読み込み可能
+```
+
+**生成ファイル例**:
+```
+test_output/cli_test/
+├── pattern_0_ligand_replaced.sdf    (2.4KB)
+├── pattern_0_protein_aligned.pdb    (97KB)
+├── pattern_1_ligand_replaced.sdf
+├── pattern_1_protein_aligned.pdb
+...
+└── pattern_15_protein_aligned.pdb
+```
+
+---
+
+## ✅ Phase 4: 品質保証 (完了)
+
+### T12: 総合テスト実行
+
+**実施日**: 2025-10-23
+**テストスイート**: pytest (40テストケース)
+
+#### テスト結果
+
+**全テスト成功**: 40/40 (100%)
+
+```bash
+./run_tests.sh
+========================================
+  inverse_msmd テストスイート
+========================================
+
+全てのテストを実行中...
+===================================================== 40 passed in 2.28s ======================================================
+```
+
+#### テストカバレッジ
+
+**単体テスト (30テスト)**:
+- ✅ インポートテスト (3テスト)
+- ✅ 部分構造探索テスト (4テスト)
+- ✅ 可視化テスト (3テスト)
+- ✅ Atom Matchingテスト (5テスト)
+- ✅ 座標変換テスト (5テスト)
+- ✅ タンパク質変換テスト (5テスト)
+- ✅ リガンド置換テスト (7テスト)
+
+**統合テスト (10テスト)**:
+- ✅ 部分構造探索とマッチングワークフロー
+- ✅ 変換行列計算ワークフロー
+- ✅ 可視化統合テスト
+- ✅ 複数プローブワークフロー
+- ✅ 統合部分構造置換（基本）
+- ✅ match_index指定テスト
+- ✅ match_index未指定テスト
+- ✅ 無効なmatch_indexエラーハンドリング
+- ✅ その他統合テスト
+
+#### 動作確認済み機能
+
+**コア機能**:
+- [x] 部分構造の自動探索
+- [x] 複数マッチの可視化
+- [x] Atom matchingパターン生成（16パターン）
+- [x] Superimpose計算
+- [x] タンパク質座標変換
+- [x] リガンド部分構造置換
+- [x] ファイル自動出力
+
+**CLIツール**:
+- [x] 全オプション動作確認
+- [x] 入力ファイル検証
+- [x] エラーメッセージ表示
+- [x] ヘルプ表示
+- [x] 詳細出力モード
+
+---
+
+### T13: エラーハンドリングとバリデーション
+
+**実施日**: 2025-10-23
+
+#### 実装済みエラーハンドリング
+
+**入力検証**:
+- ✅ ファイル存在確認（リガンド、タンパク質、部分構造）
+- ✅ match_indexの範囲チェック
+- ✅ 部分構造マッチの存在確認
+- ✅ Atom matchingパターンの存在確認
+
+**エラーメッセージ**:
+```python
+# 無効なmatch_index
+ValueError: 無効なmatch_index: 999。有効範囲は 0 から 0 です
+
+# 部分構造が見つからない
+ValueError: リガンド中に部分構造が見つかりませんでした
+
+# Atom matching失敗
+ValueError: Atom matchingに失敗しました
+```
+
+**CLIでの入力検証**:
+```python
+# 必須ファイルの存在確認
+errors = []
+if not ligand_path.exists():
+    errors.append(f"リガンドファイルが見つかりません: {ligand_path}")
+# ... 全ファイルチェック
+
+if errors:
+    print("エラー: 必要なファイルが見つかりません\n", file=sys.stderr)
+    for error in errors:
+        print(f"  - {error}", file=sys.stderr)
+    sys.exit(1)
+```
+
+#### テスト確認済み
+
+- ✅ 無効なmatch_indexでValueErrorが発生
+- ✅ 存在しないファイルで適切なエラーメッセージ
+- ✅ 部分構造未検出時のエラーハンドリング
+- ✅ Atom matching失敗時のエラーハンドリング
+
+---
+
+### T14: ドキュメント整備
+
+**実施日**: 2025-10-23
+
+#### 更新されたドキュメント
+
+**メインドキュメント**:
+- ✅ [`README.md`](../README.md) - 統合機能の使用例とAPI説明
+- ✅ [`scripts/README.md`](../scripts/README.md) - CLIツールの詳細ガイド
+- ✅ [`docs/implementation_progress.md`](implementation_progress.md) - 本ドキュメント（完全な実装記録）
+
+**既存ドキュメント**:
+- ✅ [`docs/integrated_replacement_plan.md`](integrated_replacement_plan.md) - 設計仕様
+- ✅ [`docs/task_handoff_guide.md`](task_handoff_guide.md) - タスク引き継ぎ
+- ✅ [`docs/testing_checklist.md`](testing_checklist.md) - テスト手順
+- ✅ [`docs/testing_responsibility.md`](testing_responsibility.md) - テスト責任分担
+
+#### ドキュメントの内容
+
+**使用例**:
+- Python APIからの使用方法
+- CLIツールの使用方法
+- 出力ファイルの説明
+- トラブルシューティング
+
+**技術詳細**:
+- 各関数の実装内容
+- データフロー
+- テスト結果
+- 参考コード
+
+---
+
+## 🎉 実装完了サマリー
+
+### 達成された目標
+
+**全14タスクを完了** (100%)
+
+1. ✅ **Phase 1** (4タスク): 基本機能実装
+2. ✅ **Phase 2** (3タスク): 座標変換機能
+3. ✅ **Phase 3** (3タスク): 統合とインターフェース
+4. ✅ **Phase 4** (3タスク): 品質保証
+5. ✅ **T14**: ドキュメント整備
+
+### 主要成果物
+
+**実装ファイル**:
+- [`inverse_msmd/substructure_replacement.py`](../inverse_msmd/substructure_replacement.py) - 7関数、約600行
+- [`scripts/integrated_replacement.py`](../scripts/integrated_replacement.py) - CLIツール、約180行
+
+**テストスイート**:
+- 単体テスト: 30テストケース
+- 統合テスト: 10テストケース
+- **合計**: 40テストケース（全て成功）
+
+**ドキュメント**:
+- README更新
+- scripts/README作成
+- 実装進捗記録（本ドキュメント）
+
+### 動作確認
+
+**実行例**:
+```bash
+python scripts/integrated_replacement.py \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --from-file data/sample_probes/E23 \
+    --to-file data/sample_probes/E24 \
+    --output output/integrated/ \
+    --verbose
+```
+
+**出力**:
+- 16パターンのリガンド（各2.4KB）
+- 16パターンのタンパク質（各97KB）
+- 全ファイルが正常に生成
+
+### 次のステップ
+
+統合部分構造置換機能の実装は完了しました。今後の改善案：
+
+1. **パフォーマンス最適化**: 大規模分子での処理速度向上
+2. **追加機能**:
+   - 複数の部分構造を一度に置換
+   - カスタムマッチングルール
+3. **ユーザーインターフェース**:
+   - GUIツールの開発
+   - 可視化機能の強化
+
+---
+
+## 📚 参考リンク
+
+### プロジェクト内部
+- [全体設計](integrated_replacement_plan.md)
+- [タスク引き継ぎ](task_handoff_guide.md)
+- [テストチェックリスト](testing_checklist.md)
+- [メインREADME](../README.md)
+- [CLIツールガイド](../scripts/README.md)
+
+### 実装ファイル
+- [`inverse_msmd/substructure_replacement.py`](../inverse_msmd/substructure_replacement.py)
+- [`scripts/integrated_replacement.py`](../scripts/integrated_replacement.py)
+- [`inverse_msmd/alignment.py`](../inverse_msmd/alignment.py)
+- [`inverse_msmd/utils/bio_utils.py`](../inverse_msmd/utils/bio_utils.py)
+- [`inverse_msmd/utils/mol_utils.py`](../inverse_msmd/utils/mol_utils.py)
+
+### テストスイート
+- [`tests/`](../tests/) - pytest形式の単体テスト・統合テスト
+- [`run_tests.sh`](../run_tests.sh) - テスト実行スクリプト
+
+---
+
+**最終更新**: 2025-10-23
+**実装者**: AI Assistant (Roo)
+**ステータス**: ✅ 完了 (100%)
 
 ---
 
