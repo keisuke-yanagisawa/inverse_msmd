@@ -3,8 +3,8 @@ inverse_msmd - 混合溶媒分子動力学法（MSMD）の逆解析パッケー�
 
 このパッケージは、混合溶媒分子動力学（Mixed-Solvent Molecular Dynamics, MSMD）
 シミュレーションの逆解析を行うためのユーティリティを提供します。
-タンパク質構造の重ね合わせと、相互作用プロファイルに基づくマッチングスコア計算が
-主な機能です。
+タンパク質構造の重ね合わせ、相互作用プロファイルに基づくマッチングスコア計算、
+部分構造置換が主な機能です。
 
 主要モジュール
 ------------
@@ -14,6 +14,21 @@ alignment : アライメント機能
     - find_atom_matches: 原子マッチング検索
     - align_structure: 構造重ね合わせ
     - AlignmentResult: 結果を保持するデータクラス
+
+substructure_replacement : 部分構造置換機能
+    リガンドの部分構造置換とタンパク質座標変換の統合ワークフロー
+    - integrated_substructure_replacement: 統合ワークフロー（推奨）
+    - find_substructure_in_ligand: 部分構造探索
+    - visualize_multiple_matches: マッチの可視化
+    - match_substructures: Atom matching
+    - calculate_transformation: 座標変換計算
+    - apply_transformation_to_protein: タンパク質変換
+    - replace_ligand_substructure: リガンド置換
+    - check_steric_clash: 立体障害チェック
+
+profile_scoring : プロファイルスコア計算機能
+    相互作用プロファイルに基づくマッチングスコア計算
+    - calculate_profile_score: プロファイルスコア計算
 
 utils.bio_utils : BioPythonユーティリティ
     PDB構造の操作と重ね合わせ
@@ -30,7 +45,7 @@ utils.path_utils : パス処理ユーティリティ
 
 utils.mol_utils : 分子データ操作ユーティリティ
     分子構造データの読み込み、変換、出力機能
-    - create_sdf_from_pdb_smi: 異なる形式の構造データを統合
+    - read_mol_from_pdb_smi: PDBとSMIから分子を読み込み
 
 使用例
 ------
@@ -94,19 +109,43 @@ from .utils.spatial_utils import estimate_volume
 from .utils.path_utils import expandpath
 from .utils.mol_utils import read_mol_from_pdb_smi
 from .alignment import AlignmentResult, align_structures, find_atom_matches, align_structure
+from .substructure_replacement import (
+    find_substructure_in_ligand,
+    visualize_multiple_matches,
+    match_substructures,
+    calculate_transformation,
+    apply_transformation_to_protein,
+    replace_ligand_substructure,
+    check_steric_clash,
+    integrated_substructure_replacement
+)
+from .profile_scoring import calculate_profile_score
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Keisuke Yanagisawa"
 __email__ = "yanagisawa@comp.isct.ac.jp"
 
 __all__ = [
+    # ユーティリティ
     "SuperImposer",
     "PDB",
     "estimate_volume",
     "expandpath",
     "read_mol_from_pdb_smi",
+    # アライメント
     "AlignmentResult",
     "align_structures",
     "find_atom_matches",
     "align_structure",
+    # 部分構造置換
+    "find_substructure_in_ligand",
+    "visualize_multiple_matches",
+    "match_substructures",
+    "calculate_transformation",
+    "apply_transformation_to_protein",
+    "replace_ligand_substructure",
+    "check_steric_clash",
+    "integrated_substructure_replacement",
+    # プロファイルスコア計算
+    "calculate_profile_score",
 ]

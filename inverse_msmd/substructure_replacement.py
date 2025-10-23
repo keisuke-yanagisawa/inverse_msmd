@@ -29,7 +29,7 @@
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 from rdkit import Chem
@@ -516,13 +516,17 @@ def integrated_substructure_replacement(
     from_file: str,
     to_file: str,
     output_dir: str,
-    match_index: Optional[int] = None
-) -> List[Dict[str, str]]:
+    match_index: Optional[int] = None,
+    profile_dir: Optional[str] = None,
+    probe_id: Optional[str] = None,
+    gamma: float = 0.0
+) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
     
     リガンド中の部分構造を別の部分構造で置換し、
     タンパク質構造も適切に座標変換します。
+    オプションでプロファイルマッチングスコアも計算できます。
     
     Parameters
     ----------
@@ -541,17 +545,39 @@ def integrated_substructure_replacement(
     match_index : Optional[int], default=None
         部分構造マッチのインデックス指定（0始まり）
         Noneの場合、複数マッチ時は画像出力してユーザーに選択を促す
+    profile_dir : Optional[str], default=None
+        プロファイルファイルのディレクトリパス
+        指定した場合、各パターンのプロファイルスコアを計算します
+        Noneの場合、スコア計算をスキップ（後方互換性維持）
+    probe_id : Optional[str], default=None
+        プローブID（例: "E24"）
+        profile_dirが指定されている場合は必須
+        プロファイルファイル名: {probe_id}_{残基名}_profile.dx.gz
+    gamma : float, default=0.0
+        距離重み付けパラメータ
+        - 0.0: 重み付けなし（全残基を均等に扱う）
+        - 0.003: 距離に基づく重み付け（ガウシアン減衰）
     
     Returns
     -------
-    List[Dict[str, str]]
-        各atom matchingパターンの結果リスト
+    List[Dict[str, Union[str, float, int]]]
+        各atom matchingパターンの結果リスト（スコア計算時は降順ソート済み）
         各辞書は以下のキーを含む:
         - 'ligand_file': 置換後のリガンドSDFファイルパス
         - 'protein_file': 座標変換後のタンパク質PDBファイルパス
+        - 'pattern_index': パターンインデックス
+        - 'score': プロファイルスコア（profile_dir指定時のみ）
+    
+    Raises
+    ------
+    ValueError
+        profile_dirが指定されているがprobe_idがNoneの場合
+        その他の入力パラメータが不正な場合
     
     Examples
     --------
+    基本的な使用（スコア計算なし）:
+    
     >>> results = integrated_substructure_replacement(
     ...     ligand_file="data/atom_matching/4hw3_A_lig.sdf",
     ...     protein_file="data/sample_proteins/4hw3_A.pdb",
@@ -564,10 +590,35 @@ def integrated_substructure_replacement(
     ...     print(f"Pattern {i}:")
     ...     print(f"  Ligand: {result['ligand_file']}")
     ...     print(f"  Protein: {result['protein_file']}")
+    
+    プロファイルスコア計算を含む使用:
+    
+    >>> results = integrated_substructure_replacement(
+    ...     ligand_file="data/atom_matching/4hw3_A_lig.sdf",
+    ...     protein_file="data/sample_proteins/4hw3_A.pdb",
+    ...     from_file="data/sample_probes/E23",
+    ...     to_file="data/sample_probes/E24",
+    ...     output_dir="output/integrated/",
+    ...     profile_dir="data/profiles/",
+    ...     probe_id="E24",
+    ...     gamma=0.0
+    ... )
+    >>> # 結果はスコアで降順ソート済み
+    >>> for i, result in enumerate(results):
+    ...     print(f"Pattern {i}: スコア={result['score']:.2f}")
+    ...     print(f"  Ligand: {result['ligand_file']}")
     """
     from pathlib import Path
     from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
     from inverse_msmd.utils.bio_utils import PDB
+    
+    # パラメータバリデーション
+    calculate_scores = profile_dir is not None
+    if calculate_scores and probe_id is None:
+        raise ValueError(
+            "profile_dirが指定されている場合、probe_idも必須です。\n"
+            "例: probe_id='E24'"
+        )
     
     # 出力ディレクトリを作成
     output_path = Path(output_dir)
@@ -638,6 +689,11 @@ def integrated_substructure_replacement(
     from_coords = from_no_h.GetConformer().GetPositions()
     to_coords = to_no_h.GetConformer().GetPositions()
     
+    # プローブ中心座標を計算（スコア計算が必要な場合）
+    to_center = None
+    if calculate_scores:
+        to_center = to_no_h.GetConformer().GetPositions().mean(axis=0)
+    
     # 各atom matchingパターンについて処理
     results = []
     for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
@@ -659,23 +715,12 @@ def integrated_substructure_replacement(
         si.fit(e24_mcs_coords, ligand_mcs_coords)  # E24をリガンドに合わせる
         rot, tran = si.rot_, si.tran_
         
-        # 3. E24の座標を変換
-        print(f"  E24座標を変換中...")
+        # 3. E24は変換しない（元の座標のまま使用）
+        print(f"  E24を元の座標で使用...")
         import copy
         to_mol_copy = copy.deepcopy(to_no_h)
-        to_mol_transformed_coords = np.dot(to_coords, rot) + tran
         
-        # 変換後の座標をE24に設定
-        conf = to_mol_copy.GetConformer()
-        for i in range(to_mol_copy.GetNumAtoms()):
-            conf.SetAtomPosition(i, (
-                float(to_mol_transformed_coords[i, 0]),
-                float(to_mol_transformed_coords[i, 1]),
-                float(to_mol_transformed_coords[i, 2])
-            ))
-        
-        # 4. リガンドの部分構造を変換後のE24で置換
-        # リガンドとタンパク質は元の座標系のまま
+        # 4. リガンドの部分構造をE24で置換
         print(f"  リガンド部分構造を置換中...")
         replaced_ligand = replace_ligand_substructure(
             ligand_no_h,
@@ -683,6 +728,21 @@ def integrated_substructure_replacement(
             to_mol_copy,
             atom_pairs
         )
+        
+        # 5. リガンドを逆変換（E24の座標系に合わせる）
+        print(f"  リガンド座標を変換中...")
+        replaced_ligand_coords = replaced_ligand.GetConformer().GetPositions()
+        # 逆変換: new_coords = rot.T @ (old_coords - tran)
+        transformed_ligand_coords = np.dot(replaced_ligand_coords - tran, rot.T)
+        
+        # 変換後の座標をリガンドに設定
+        conf = replaced_ligand.GetConformer()
+        for i in range(replaced_ligand.GetNumAtoms()):
+            conf.SetAtomPosition(i, (
+                float(transformed_ligand_coords[i, 0]),
+                float(transformed_ligand_coords[i, 1]),
+                float(transformed_ligand_coords[i, 2])
+            ))
         
         # 5. 立体障害チェック
         print(f"  立体障害チェック中...")
@@ -699,8 +759,13 @@ def integrated_substructure_replacement(
         
         print(f"  ✓ 立体障害なし")
         
-        # 6. タンパク質は変換しない（元の座標系のまま）
+        # 6. タンパク質を逆変換（E24の座標系に合わせる）
+        print(f"  タンパク質座標を変換中...")
         protein_copy = copy.deepcopy(protein)
+        protein_coords = PDB.get_attr(protein_copy, "coord")
+        # 逆変換: new_coords = rot.T @ (old_coords - tran)
+        transformed_protein_coords = np.dot(protein_coords - tran, rot.T)
+        PDB.set_attr(protein_copy, "coord", transformed_protein_coords)
         transformed_protein = protein_copy
         
         # 7. ファイルを出力
@@ -720,11 +785,46 @@ def integrated_substructure_replacement(
         print(f"  ✓ リガンド: {ligand_output}")
         print(f"  ✓ タンパク質: {protein_output}")
         
-        # 結果を記録
-        results.append({
+        # 結果辞書を作成
+        result = {
             'ligand_file': str(ligand_output),
-            'protein_file': str(protein_output)
-        })
+            'protein_file': str(protein_output),
+            'pattern_index': pattern_idx
+        }
+        
+        # プロファイルスコア計算（オプション）
+        if calculate_scores:
+            print(f"  プロファイルスコア計算中...")
+            from .profile_scoring import calculate_profile_score
+            
+            # プローブ中心座標（E24は変換されていないので元の座標のまま）
+            transformed_center = to_center
+            
+            # スコアを計算
+            try:
+                score = calculate_profile_score(
+                    transformed_protein,
+                    transformed_center,
+                    profile_dir,
+                    probe_id,
+                    gamma
+                )
+                result['score'] = score
+                print(f"  ✓ スコア: {score:.2f}")
+            except Exception as e:
+                print(f"  ⚠ 警告: スコア計算に失敗しました: {e}")
+                # スコア計算失敗時もパターンは保存
+        
+        results.append(result)
+    
+    # スコア計算時は降順ソート
+    if calculate_scores and results:
+        # スコアがあるもののみソート
+        results_with_score = [r for r in results if 'score' in r]
+        if results_with_score:
+            results_with_score.sort(key=lambda x: x['score'], reverse=True)
+            print(f"\n✓ 結果をスコアで降順ソートしました")
+            results = results_with_score
     
     print(f"\n完了: {len(results)} パターンの結果を生成しました")
     return results

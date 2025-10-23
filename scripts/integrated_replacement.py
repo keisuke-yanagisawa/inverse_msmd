@@ -78,6 +78,25 @@ def main():
              "指定しない場合、複数マッチ時は可視化画像を出力します"
     )
     parser.add_argument(
+        "--profile-dir",
+        default=None,
+        help="プロファイルディレクトリのパス。"
+             "指定した場合、各パターンのプロファイルスコアを計算します"
+    )
+    parser.add_argument(
+        "--probe-id",
+        default=None,
+        help="プローブID（例: E24）。"
+             "profile-dirが指定されている場合は必須です"
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.0,
+        help="距離重み付けパラメータ（デフォルト: 0.0）。"
+             "0.0=重み付けなし、0.003=距離重み付けあり"
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="詳細な出力を表示"
@@ -85,7 +104,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 1.0.0"
+        version="%(prog)s 2.0.0"
     )
     
     args = parser.parse_args()
@@ -126,6 +145,11 @@ def main():
         print("inverse_msmdパッケージがインストールされているか確認してください", file=sys.stderr)
         sys.exit(1)
     
+    # プロファイル計算のパラメータ検証
+    if args.profile_dir is not None and args.probe_id is None:
+        print("エラー: --profile-dirを指定する場合、--probe-idも必須です", file=sys.stderr)
+        sys.exit(1)
+    
     if args.verbose:
         print("=" * 70)
         print("統合部分構造置換を開始します")
@@ -136,6 +160,10 @@ def main():
         print(f"置換後部分構造: {args.to_file}")
         print(f"出力先        : {args.output}")
         print(f"マッチ指定    : {args.match_index if args.match_index is not None else '自動'}")
+        if args.profile_dir:
+            print(f"プロファイル  : {args.profile_dir}")
+            print(f"プローブID    : {args.probe_id}")
+            print(f"Gamma値       : {args.gamma}")
         print("=" * 70)
         print()
     
@@ -147,7 +175,10 @@ def main():
             from_file=args.from_file,
             to_file=args.to_file,
             output_dir=args.output,
-            match_index=args.match_index
+            match_index=args.match_index,
+            profile_dir=args.profile_dir,
+            probe_id=args.probe_id,
+            gamma=args.gamma
         )
         
         # 結果のサマリーを表示
@@ -159,12 +190,20 @@ def main():
         if args.verbose:
             for i, result in enumerate(results):
                 print(f"\nパターン {i}:")
+                if 'score' in result:
+                    print(f"  スコア    : {result['score']:.2f}")
                 print(f"  リガンド  : {result['ligand_file']}")
                 print(f"  タンパク質: {result['protein_file']}")
         else:
             print(f"\n出力ディレクトリ: {args.output}")
             print(f"  pattern_N_ligand_replaced.sdf")
             print(f"  pattern_N_protein_aligned.pdb")
+            if args.profile_dir and results:
+                print(f"\n✓ 結果はプロファイルスコアで降順ソート済みです")
+                if results:
+                    best_score = results[0].get('score')
+                    if best_score is not None:
+                        print(f"  最高スコア: {best_score:.2f} (パターン {results[0]['pattern_index']})")
         
         print()
         
