@@ -7,9 +7,13 @@ SDFファイル内の分子について、指定された部分構造を別の�
 使用例:
     python scripts/replace_substructure.py \
         --input data/atom_matching/4hw3_A_lig.sdf \
-        --from-smiles "Cc1cccc(C)c1Cl" \
-        --to-smiles "c1ccc(-c2ccccc2)cc1" \
+        --from-file data/sample_probes/E23 \
+        --to-file data/sample_probes/E24 \
         --output output/4hw3_A_lig_E23toE24.sdf
+
+注意:
+    --from-fileと--to-fileには拡張子なしのベースパスを指定します。
+    自動的に.pdbと.smiファイルを読み込みます。
 """
 
 import argparse
@@ -21,6 +25,9 @@ matplotlib.use('Agg')  # GUIなしのバックエンドを使用（高速化）
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import copy
+
+# プロジェクトのユーティリティモジュールを直接インポート
+from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
 
 
 def print_verbose(message, verbose=False):
@@ -147,7 +154,7 @@ def create_replacement(mol, match, to_mol, connections):
     return new_mol
 
 
-def find_and_replace_substructure(mol, from_smiles, to_smiles, verbose=False):
+def find_and_replace_substructure(mol, from_mol, to_mol, verbose=False):
     """
     分子内の部分構造を検索して置き換えます。
     
@@ -155,10 +162,10 @@ def find_and_replace_substructure(mol, from_smiles, to_smiles, verbose=False):
     ----------
     mol : Chem.Mol
         対象の分子
-    from_smiles : str
-        検索する部分構造のSMILES
-    to_smiles : str
-        置き換える部分構造のSMILES
+    from_mol : Chem.Mol
+        検索する部分構造
+    to_mol : Chem.Mol
+        置き換える部分構造
     verbose : bool
         詳細情報を出力するか
         
@@ -167,18 +174,16 @@ def find_and_replace_substructure(mol, from_smiles, to_smiles, verbose=False):
     list of Chem.Mol
         有効な置換候補のリスト
     """
-    # 検索する部分構造を作成
-    from_mol = Chem.MolFromSmiles(from_smiles)
-    if from_mol is None:
-        raise ValueError(f"from_smilesが無効です: {from_smiles}")
+    # 分子をSMILES化して表示用の名前として使用（水素を除く）
+    from_smiles = Chem.MolToSmiles(Chem.RemoveHs(from_mol))
+    to_smiles = Chem.MolToSmiles(Chem.RemoveHs(to_mol))
     
-    # 置き換える部分構造を作成
-    to_mol = Chem.MolFromSmiles(to_smiles)
-    if to_mol is None:
-        raise ValueError(f"to_smilesが無効です: {to_smiles}")
+    # 水素を除いた分子で処理（入力SDFファイルには水素がないため）
+    from_mol_no_h = Chem.RemoveHs(from_mol)
+    to_mol_no_h = Chem.RemoveHs(to_mol)
     
     # 部分構造を検索
-    matches = mol.GetSubstructMatches(from_mol)
+    matches = mol.GetSubstructMatches(from_mol_no_h)
     
     if not matches:
         raise ValueError(f"部分構造 '{from_smiles}' が見つかりませんでした")
@@ -192,9 +197,9 @@ def find_and_replace_substructure(mol, from_smiles, to_smiles, verbose=False):
     print_verbose(f"置き換え前の原子数: {mol.GetNumAtoms()}", verbose)
     
     try:
-        # すべての有効な置換候補を生成
+        # すべての有効な置換候補を生成（水素を除いた分子を使用）
         valid_candidates = generate_all_replacement_candidates(
-            mol, from_mol, to_mol, match, verbose
+            mol, from_mol_no_h, to_mol_no_h, match, verbose
         )
         
         if not valid_candidates:
@@ -222,14 +227,14 @@ def main():
         help="入力SDFファイル"
     )
     parser.add_argument(
-        "--from-smiles",
+        "--from-file",
         required=True,
-        help="検索する部分構造のSMILES（例: E23の構造）"
+        help="検索する部分構造のベースパス（拡張子なし、例: data/sample_probes/E23）"
     )
     parser.add_argument(
-        "--to-smiles",
+        "--to-file",
         required=True,
-        help="置き換える部分構造のSMILES（例: E24の構造）"
+        help="置き換える部分構造のベースパス（拡張子なし、例: data/sample_probes/E24）"
     )
     parser.add_argument(
         "--output", "-o",
@@ -263,9 +268,32 @@ def main():
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    print(f"入力ファイル: {args.input}")
-    print(f"検索する部分構造: {args.from_smiles}")
-    print(f"置き換える部分構造: {args.to_smiles}")
+    # 部分構造を読み込み
+    try:
+        print("部分構造を読み込み中...")
+        
+        # from_fileのPDBとSMIファイルパスを構築
+        from_base = Path(args.from_file)
+        from_pdb = str(from_base.with_suffix('.pdb'))
+        from_smi = str(from_base.with_suffix('.smi'))
+        
+        # to_fileのPDBとSMIファイルパスを構築
+        to_base = Path(args.to_file)
+        to_pdb = str(to_base.with_suffix('.pdb'))
+        to_smi = str(to_base.with_suffix('.smi'))
+        
+        # read_mol_from_pdb_smiを使用して読み込み
+        from_mol = read_mol_from_pdb_smi(from_pdb, from_smi, verbose=args.verbose)
+        to_mol = read_mol_from_pdb_smi(to_pdb, to_smi, verbose=args.verbose)
+        
+        print("✓ 部分構造の読み込みに成功")
+    except Exception as e:
+        print(f"エラー: 部分構造の読み込みに失敗しました: {e}")
+        return 1
+    
+    print(f"\n入力ファイル: {args.input}")
+    print(f"検索する部分構造: {args.from_file} ({from_mol.GetNumAtoms()} 原子)")
+    print(f"置き換える部分構造: {args.to_file} ({to_mol.GetNumAtoms()} 原子)")
     print(f"出力ファイル: {args.output}")
     print()
     
@@ -298,8 +326,8 @@ def main():
             # すべての有効な候補を取得
             candidates = find_and_replace_substructure(
                 mol,
-                args.from_smiles,
-                args.to_smiles,
+                from_mol,
+                to_mol,
                 verbose=args.verbose
             )
             
@@ -364,7 +392,10 @@ def main():
             draw_output = str(output_path.with_suffix('.png'))
         
         print(f"\n構造を描画中...")
-        draw_comparison(original_mols, replaced_mols, draw_output, args.from_smiles, args.to_smiles)
+        # SMILESを生成して描画関数に渡す（水素を除く）
+        from_smiles = Chem.MolToSmiles(Chem.RemoveHs(from_mol))
+        to_smiles = Chem.MolToSmiles(Chem.RemoveHs(to_mol))
+        draw_comparison(original_mols, replaced_mols, draw_output, from_smiles, to_smiles)
         print(f"  描画ファイル: {draw_output}")
     
     return 0
