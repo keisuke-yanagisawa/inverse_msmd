@@ -9,6 +9,35 @@
 3. **[`testing_responsibility.md`](testing_responsibility.md)** - テスト責任分担
 4. **本ドキュメント** - タスク引き継ぎガイド
 
+## 🧪 重要：テストスイートについて
+
+**このプロジェクトでは、pytestを使用した単体テスト・統合テストフレームワークが導入されています。**
+
+### テスト作成の方針
+
+新しい機能を実装する際は、必ず[`tests/`](../tests/)ディレクトリにpytest形式のテストを作成してください：
+
+```bash
+# テスト実行（開発中は頻繁に実行）
+./run_tests.sh fast
+
+# 全テスト実行
+./run_tests.sh all
+```
+
+### テストの配置
+
+- **単体テスト**: `tests/unit/test_*.py`
+- **統合テスト**: `tests/integration/test_*.py`
+- **フィクスチャ**: `tests/conftest.py`（既存のフィクスチャを再利用）
+
+### 参考資料
+
+- [`tests/README.md`](../tests/README.md) - テストスイート詳細ガイド
+- 既存テスト: [`tests/unit/`](../tests/unit/)および[`tests/integration/`](../tests/integration/)を参考にする
+
+**注意**: 以下のチェックリストに記載されているテストコード例は、手動実行用の参考例です。実際のテストは`tests/`ディレクトリのpytest形式で実装してください。
+
 ---
 
 ## 🔄 タスク依存関係

@@ -293,6 +293,93 @@ MIT License
 
 Keisuke Yanagisawa (yanagisawa@comp.isct.ac.jp)
 
+## テスト
+
+このプロジェクトには包括的なテストスイートが含まれており、品質管理を確実に行うことができます。
+
+### テストの実行
+
+#### 簡単な方法（推奨）
+
+提供されているテスト実行スクリプトを使用します：
+
+```bash
+# 全てのテストを実行
+./run_tests.sh all
+
+# 単体テストのみ実行
+./run_tests.sh unit
+
+# 統合テストのみ実行
+./run_tests.sh integration
+
+# 高速テスト（visualとslowマーカーを除く）
+./run_tests.sh fast
+
+# カバレッジレポート付きで実行
+./run_tests.sh coverage
+```
+
+#### pytestを直接使用
+
+```bash
+# 全てのテストを実行
+pytest tests/
+
+# 詳細な出力で実行
+pytest tests/ -v
+
+# 特定のマーカーのみ実行
+pytest tests/ -m "unit"
+pytest tests/ -m "integration"
+
+# 特定のテストファイルを実行
+pytest tests/unit/test_imports.py
+
+# カバレッジレポートを生成
+pytest tests/ --cov=inverse_msmd --cov-report=html
+```
+
+### テストの構造
+
+```
+tests/
+├── conftest.py              # 共通フィクスチャ定義
+├── unit/                    # 単体テスト
+│   ├── test_imports.py     # インポートテスト
+│   ├── test_substructure_search.py  # 部分構造探索
+│   ├── test_visualization.py        # 可視化機能
+│   └── test_atom_matching.py        # Atom Matching
+└── integration/             # 統合テスト
+    └── test_workflow.py    # ワークフロー全体のテスト
+```
+
+### テストマーカー
+
+- `@pytest.mark.unit` - 単体テスト
+- `@pytest.mark.integration` - 統合テスト
+- `@pytest.mark.slow` - 実行時間が長いテスト
+- `@pytest.mark.visual` - 視覚的な確認が必要なテスト
+
+### 開発時のテスト
+
+開発時は以下のワークフローを推奨します：
+
+```bash
+# 1. 高速テストを実行して基本的な動作を確認
+./run_tests.sh fast
+
+# 2. 変更した機能に関連するテストを実行
+pytest tests/unit/test_substructure_search.py -v
+
+# 3. 全テストを実行して問題がないことを確認
+./run_tests.sh all
+
+# 4. カバレッジを確認
+./run_tests.sh coverage
+# htmlcov/index.html をブラウザで開く
+```
+
 ## 引用
 
 このパッケージを使用する場合は、適切な引用を行ってください。

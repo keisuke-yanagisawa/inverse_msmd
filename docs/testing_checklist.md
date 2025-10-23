@@ -3,6 +3,32 @@
 本ドキュメントは、実装の各段階で行うべき動作チェック方法を詳細に記述します。
 各機能を実装したら、必ずこのチェックリストに従って動作確認を行ってください。
 
+## 🎯 pytestスイートについて
+
+**重要**: このドキュメントのテストケースは、[`tests/`](../tests/)ディレクトリのpytestスイートとして実装されています。
+
+### クイックスタート
+```bash
+# 全テスト実行
+./run_tests.sh all
+
+# 単体テストのみ
+./run_tests.sh unit
+
+# 統合テストのみ
+./run_tests.sh integration
+
+# 詳細は tests/README.md を参照
+```
+
+### pytestスイートの構成
+- [`tests/unit/`](../tests/unit/) - 個別機能の単体テスト
+- [`tests/integration/`](../tests/integration/) - 複数機能の統合テスト
+- [`tests/conftest.py`](../tests/conftest.py) - 共通フィクスチャ
+- [`run_tests.sh`](../run_tests.sh) - テスト実行スクリプト
+
+以下のチェックリストは、各テストケースの詳細な実行手順と期待される結果を記載しています。
+
 ## テスト環境の準備
 
 ### 必要なテストデータ

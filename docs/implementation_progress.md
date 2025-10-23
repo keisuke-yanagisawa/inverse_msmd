@@ -22,9 +22,9 @@
 
 ### T1: モジュール基本構造作成
 
-**実装日**: 2025-10-23  
-**ファイル**: [`inverse_msmd/substructure_replacement.py`](../inverse_msmd/substructure_replacement.py)  
-**テストファイル**: [`test_imports.py`](../test_imports.py)
+**実装日**: 2025-10-23
+**ファイル**: [`inverse_msmd/substructure_replacement.py`](../inverse_msmd/substructure_replacement.py)
+**テストファイル**: [`tests/unit/test_imports.py`](../tests/unit/test_imports.py)
 
 #### 実装内容
 - 全7関数のスタブ定義完了
@@ -52,9 +52,9 @@
 
 ### T2: 部分構造探索関数実装
 
-**実装日**: 2025-10-23  
-**関数**: [`find_substructure_in_ligand()`](../inverse_msmd/substructure_replacement.py:46)  
-**テストファイル**: [`test_find_substructure.py`](../test_find_substructure.py)
+**実装日**: 2025-10-23
+**関数**: [`find_substructure_in_ligand()`](../inverse_msmd/substructure_replacement.py:46)
+**テストファイル**: [`tests/unit/test_substructure_search.py`](../tests/unit/test_substructure_search.py)
 
 #### 実装内容
 ```python
@@ -98,9 +98,9 @@ def find_substructure_in_ligand(
 
 ### T3: 複数マッチ可視化関数実装
 
-**実装日**: 2025-10-23  
-**関数**: [`visualize_multiple_matches()`](../inverse_msmd/substructure_replacement.py:81)  
-**テストファイル**: [`test_visualize_matches.py`](../test_visualize_matches.py)
+**実装日**: 2025-10-23
+**関数**: [`visualize_multiple_matches()`](../inverse_msmd/substructure_replacement.py:81)
+**テストファイル**: [`tests/unit/test_visualization.py`](../tests/unit/test_visualization.py)
 
 #### 実装内容
 - matplotlibとRDKit Drawを使用したPNG画像生成
@@ -146,9 +146,9 @@ PNG画像を生成中: test_output/substructure_matches_test.png
 
 ### T4: Atom Matching関数実装
 
-**実装日**: 2025-10-23  
-**関数**: [`match_substructures()`](../inverse_msmd/substructure_replacement.py:159)  
-**テストファイル**: [`test_atom_matching.py`](../test_atom_matching.py)
+**実装日**: 2025-10-23
+**関数**: [`match_substructures()`](../inverse_msmd/substructure_replacement.py:159)
+**テストファイル**: [`tests/unit/test_atom_matching.py`](../tests/unit/test_atom_matching.py)
 
 #### 実装内容
 ```python
@@ -472,8 +472,22 @@ results_match1 = integrated_substructure_replacement(
 - [`inverse_msmd/alignment.py`](../inverse_msmd/alignment.py)
 - [`scripts/replace_substructure.py`](../scripts/replace_substructure.py)
 
-### テストファイル
-- [`test_imports.py`](../test_imports.py)
-- [`test_find_substructure.py`](../test_find_substructure.py)
-- [`test_visualize_matches.py`](../test_visualize_matches.py)
-- [`test_atom_matching.py`](../test_atom_matching.py)
+### テストスイート
+- [`tests/`](../tests/) - pytest形式の単体テスト・統合テスト
+- [`tests/unit/test_imports.py`](../tests/unit/test_imports.py)
+- [`tests/unit/test_substructure_search.py`](../tests/unit/test_substructure_search.py)
+- [`tests/unit/test_visualization.py`](../tests/unit/test_visualization.py)
+- [`tests/unit/test_atom_matching.py`](../tests/unit/test_atom_matching.py)
+- [`tests/integration/test_workflow.py`](../tests/integration/test_workflow.py)
+- [`run_tests.sh`](../run_tests.sh) - テスト実行スクリプト
+
+### テスト実行方法
+```bash
+# 全テスト実行
+./run_tests.sh all
+
+# 単体テストのみ
+./run_tests.sh unit
+
+# 詳細はtests/README.mdを参照
+```

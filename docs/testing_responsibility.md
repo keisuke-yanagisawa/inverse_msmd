@@ -2,6 +2,20 @@
 
 このドキュメントは、[`testing_checklist.md`](testing_checklist.md)の各テストについて、AIが自動実行できる部分と、ユーザーが手動で確認する必要がある部分を明確にします。
 
+## 🎯 pytestスイートの導入
+
+テストケースは[`tests/`](../tests/)ディレクトリのpytestスイートとして実装されており、自動実行が可能です。
+
+```bash
+# 全テスト実行（推奨）
+./run_tests.sh all
+
+# 単体テストのみ
+./run_tests.sh unit
+
+# 詳細は tests/README.md を参照
+```
+
 ## 凡例
 - ✅ **AI自動**: AIが完全に自動実行・検証可能
 - 🔶 **AI補助**: AIが実行するが、ユーザーの最終確認が必要
