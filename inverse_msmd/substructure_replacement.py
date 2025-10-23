@@ -327,7 +327,7 @@ def replace_ligand_substructure(
     match: Tuple[int, ...],
     replacement_mol: Chem.Mol,
     atom_pairs: npt.NDArray[np.int_]
-) -> Chem.Mol:
+) -> Tuple[Chem.Mol, Dict[int, int]]:
     """
     リガンドの部分構造を新しい部分構造で置換します。
     
@@ -345,12 +345,13 @@ def replace_ligand_substructure(
     
     Returns
     -------
-    Chem.Mol
-        部分構造が置換された新しいリガンド分子
+    Tuple[Chem.Mol, Dict[int, int]]
+        - 部分構造が置換された新しいリガンド分子
+        - 置換部分のマッピング辞書 {置換後リガンド内インデックス: 元のreplacement_mol内インデックス}
     
     Examples
     --------
-    >>> replaced_ligand = replace_ligand_substructure(
+    >>> replaced_ligand, replacement_map = replace_ligand_substructure(
     ...     ligand_mol,
     ...     match,
     ...     e24_mol,
@@ -425,6 +426,7 @@ def replace_ligand_substructure(
     
     # 古い部分構造の原子を削除（逆順で削除してインデックスのずれを防ぐ）
     # 座標も同時に削除
+    sorted_match = sorted(match)
     for atom_idx in sorted(match, reverse=True):
         rwmol.RemoveAtom(atom_idx)
         del new_coords_list[atom_idx]
@@ -442,7 +444,18 @@ def replace_ligand_substructure(
         conf.SetAtomPosition(i, Point3D(float(coords[0]), float(coords[1]), float(coords[2])))
     new_mol.AddConformer(conf)
     
-    return new_mol
+    # 置換部分のマッピング辞書を作成
+    # new_atom_mapは {replacement_mol内インデックス: 追加時のrwmol内インデックス}
+    # 削除後の最終的なインデックスに変換する必要がある
+    replacement_map = {}
+    for replacement_idx, added_idx in new_atom_map.items():
+        # added_idxは削除前のrwmol内インデックス
+        # 削除前に、matchに含まれる原子でadded_idxより小さいものの数を数える
+        num_deleted_before = sum(1 for m in sorted_match if m < added_idx)
+        final_idx = added_idx - num_deleted_before
+        replacement_map[final_idx] = replacement_idx
+    
+    return new_mol, replacement_map
 
 def check_steric_clash(
     mol: Chem.Mol,
@@ -722,7 +735,7 @@ def integrated_substructure_replacement(
         
         # 4. リガンドの部分構造をE24で置換
         print(f"  リガンド部分構造を置換中...")
-        replaced_ligand = replace_ligand_substructure(
+        replaced_ligand, replacement_map = replace_ligand_substructure(
             ligand_no_h,
             selected_match,
             to_mol_copy,
@@ -735,16 +748,29 @@ def integrated_substructure_replacement(
         # 逆変換: new_coords = rot.T @ (old_coords - tran)
         transformed_ligand_coords = np.dot(replaced_ligand_coords - tran, rot.T)
         
-        # 変換後の座標をリガンドに設定
-        conf = replaced_ligand.GetConformer()
-        for i in range(replaced_ligand.GetNumAtoms()):
-            conf.SetAtomPosition(i, (
-                float(transformed_ligand_coords[i, 0]),
-                float(transformed_ligand_coords[i, 1]),
-                float(transformed_ligand_coords[i, 2])
-            ))
+        # 6. 置換部分の座標をプローブの元の座標でコピー（重要な修正）
+        print(f"  置換部分の座標を修正中...")
+        # replacement_mapは {新リガンド内インデックス: replacement_mol内インデックス}
+        # 変換後の座標をコピー
+        final_coords = transformed_ligand_coords.copy()
         
-        # 5. 立体障害チェック
+        # 置換部分の座標をプローブの元の座標で上書き
+        for new_ligand_idx, replacement_idx in replacement_map.items():
+            # プローブ(E24)の元の座標を直接コピー
+            final_coords[new_ligand_idx] = to_coords[replacement_idx]
+        
+        # 最終座標をリガンドに設定
+        replaced_ligand.RemoveAllConformers()
+        from rdkit.Geometry import Point3D
+        conf = Chem.Conformer(replaced_ligand.GetNumAtoms())
+        for i in range(replaced_ligand.GetNumAtoms()):
+            conf.SetAtomPosition(i, Point3D(float(final_coords[i, 0]),
+                                             float(final_coords[i, 1]),
+                                             float(final_coords[i, 2])))
+        replaced_ligand.AddConformer(conf)
+        print(f"  ✓ {len(replacement_map)}個の原子座標を修正しました")
+        
+        # 7. 立体障害チェック
         print(f"  立体障害チェック中...")
         is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
         
@@ -759,7 +785,7 @@ def integrated_substructure_replacement(
         
         print(f"  ✓ 立体障害なし")
         
-        # 6. タンパク質を逆変換（E24の座標系に合わせる）
+        # 8. タンパク質を逆変換（E24の座標系に合わせる）
         print(f"  タンパク質座標を変換中...")
         protein_copy = copy.deepcopy(protein)
         protein_coords = PDB.get_attr(protein_copy, "coord")
@@ -768,7 +794,7 @@ def integrated_substructure_replacement(
         PDB.set_attr(protein_copy, "coord", transformed_protein_coords)
         transformed_protein = protein_copy
         
-        # 7. ファイルを出力
+        # 9. ファイルを出力
         ligand_output = output_path / f"pattern_{pattern_idx}_ligand_replaced.sdf"
         protein_output = output_path / f"pattern_{pattern_idx}_protein_aligned.pdb"
         

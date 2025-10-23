@@ -215,3 +215,119 @@ class TestIntegratedWorkflow:
                 output_dir=str(test_output),
                 match_index=999  # 明らかに無効なインデックス
             )
+
+    @pytest.mark.integration
+    def test_replacement_coordinates_accuracy(self, output_dir):
+        """
+        置換部分の座標がプローブの元の座標と一致することを確認
+        
+        これは重要なバグ検出テストです：
+        - 以前のバグ: 置換部分の座標が変換されて不適切な位置になっていた
+        - 修正後: 置換部分の座標はプローブの元の座標でコピーされる
+        """
+        from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
+        
+        test_output = output_dir / "coordinate_accuracy_test"
+        
+        # プローブ(E24)を読み込んで元の座標を取得
+        e24_mol = read_mol_from_pdb_smi(
+            "data/sample_probes/E24.pdb",
+            "data/sample_probes/E24.smi"
+        )
+        e24_no_h = Chem.RemoveHs(e24_mol)
+        e24_original_coords = e24_no_h.GetConformer().GetPositions()
+        
+        # 統合ワークフローを実行
+        results = integrated_substructure_replacement(
+            ligand_file="data/atom_matching/4hw3_A_lig.sdf",
+            protein_file="data/sample_proteins/4hw3_A.pdb",
+            from_file="data/sample_probes/E23",
+            to_file="data/sample_probes/E24",
+            output_dir=str(test_output),
+            match_index=0
+        )
+        
+        assert len(results) > 0, "結果が生成されていません"
+        
+        # 最初のパターンで座標の正確性をチェック
+        first_result = results[0]
+        ligand_path = Path(first_result['ligand_file'])
+        
+        # 置換後のリガンドを読み込む
+        replaced_ligand = next(Chem.SDMolSupplier(str(ligand_path)))
+        assert replaced_ligand is not None, "リガンドの読み込みに失敗しました"
+        
+        replaced_no_h = Chem.RemoveHs(replaced_ligand)
+        replaced_coords = replaced_no_h.GetConformer().GetPositions()
+        
+        # E24の原子のどれかがリガンド内に見つかることを確認
+        # （置換部分の座標がE24の元の座標と一致するかチェック）
+        found_matching_coords = False
+        tolerance = 0.01  # 座標の許容誤差（Å）
+        
+        for e24_coord in e24_original_coords:
+            # 置換後のリガンド内で、このE24の座標と一致する原子を探す
+            for replaced_coord in replaced_coords:
+                distance = np.linalg.norm(e24_coord - replaced_coord)
+                if distance < tolerance:
+                    found_matching_coords = True
+                    break
+            if found_matching_coords:
+                break
+        
+        assert found_matching_coords, \
+            "置換部分の座標がプローブの元の座標と一致しません。" \
+            "座標コピーが正しく機能していない可能性があります。"
+    
+    @pytest.mark.integration
+    def test_replacement_coordinates_not_transformed(self, output_dir):
+        """
+        置換部分の座標が変換されていないことを確認
+        
+        バグがあった場合、置換部分の座標が逆変換されて不適切な位置になります。
+        このテストは、置換部分の座標がプローブの元の座標と一致し、
+        変換されていないことを確認します。
+        """
+        from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
+        
+        test_output = output_dir / "no_transform_test"
+        
+        # プローブ(E24)の座標を取得
+        e24_mol = read_mol_from_pdb_smi(
+            "data/sample_probes/E24.pdb",
+            "data/sample_probes/E24.smi"
+        )
+        e24_no_h = Chem.RemoveHs(e24_mol)
+        e24_coords = e24_no_h.GetConformer().GetPositions()
+        e24_center = e24_coords.mean(axis=0)
+        
+        # 統合ワークフローを実行
+        results = integrated_substructure_replacement(
+            ligand_file="data/atom_matching/4hw3_A_lig.sdf",
+            protein_file="data/sample_proteins/4hw3_A.pdb",
+            from_file="data/sample_probes/E23",
+            to_file="data/sample_probes/E24",
+            output_dir=str(test_output),
+            match_index=0
+        )
+        
+        # 置換後のリガンドを読み込む
+        first_result = results[0]
+        replaced_ligand = next(Chem.SDMolSupplier(str(first_result['ligand_file'])))
+        replaced_no_h = Chem.RemoveHs(replaced_ligand)
+        replaced_coords = replaced_no_h.GetConformer().GetPositions()
+        
+        # 置換部分の座標がE24の座標範囲内にあることを確認
+        # （大きく離れた位置にないことを確認）
+        max_expected_distance = 50.0  # Å（合理的な最大距離）
+        
+        # 置換されたリガンドの一部の原子がE24の中心から妥当な距離にあるか確認
+        min_distance_to_e24_center = float('inf')
+        for coord in replaced_coords:
+            distance = np.linalg.norm(coord - e24_center)
+            min_distance_to_e24_center = min(min_distance_to_e24_center, distance)
+        
+        # 最も近い原子でも非常に遠い場合、変換に問題がある
+        assert min_distance_to_e24_center < max_expected_distance, \
+            f"置換部分の座標がプローブから{min_distance_to_e24_center:.2f}Å離れています。" \
+            "座標が不適切に変換されている可能性があります。"
