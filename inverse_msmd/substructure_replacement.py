@@ -36,6 +36,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 from Bio.PDB.Structure import Structure
 from scipy.spatial.distance import pdist, squareform
+import csv
 
 from .utils.bio_utils import SuperImposer, PDB
 from .utils.mol_utils import read_mol_from_pdb_smi
@@ -532,7 +533,8 @@ def integrated_substructure_replacement(
     match_index: Optional[int] = None,
     profile_dir: Optional[str] = None,
     probe_id: Optional[str] = None,
-    gamma: float = 0.0
+    gamma: float = 0.0,
+    csv_output: Optional[str] = None
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
@@ -570,6 +572,15 @@ def integrated_substructure_replacement(
         距離重み付けパラメータ
         - 0.0: 重み付けなし（全残基を均等に扱う）
         - 0.003: 距離に基づく重み付け（ガウシアン減衰）
+    csv_output : Optional[str], default=None
+        CSV出力ファイルのパス
+        指定した場合、結果をCSVファイルとして保存します
+        CSVには以下の列が含まれます：
+        - pattern_index: パターン番号
+        - score: マッチングスコア（profile_dir指定時のみ）
+        - ligand_smiles: 置換後のリガンドのSMILES表記
+        - ligand_file: 出力されたリガンドSDFファイルパス
+        - protein_file: 出力されたタンパク質PDBファイルパス
     
     Returns
     -------
@@ -811,11 +822,15 @@ def integrated_substructure_replacement(
         print(f"  ✓ リガンド: {ligand_output}")
         print(f"  ✓ タンパク質: {protein_output}")
         
+        # リガンドのSMILES表記を取得
+        ligand_smiles = Chem.MolToSmiles(replaced_ligand)
+        
         # 結果辞書を作成
         result = {
             'ligand_file': str(ligand_output),
             'protein_file': str(protein_output),
-            'pattern_index': pattern_idx
+            'pattern_index': pattern_idx,
+            'ligand_smiles': ligand_smiles
         }
         
         # プロファイルスコア計算（オプション）
@@ -851,6 +866,29 @@ def integrated_substructure_replacement(
             results_with_score.sort(key=lambda x: x['score'], reverse=True)
             print(f"\n✓ 結果をスコアで降順ソートしました")
             results = results_with_score
+    
+    # CSV出力（オプション）
+    if csv_output and results:
+        print(f"\nCSVファイルを出力中...")
+        csv_path = Path(csv_output)
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            # CSVの列を決定（スコアの有無で変わる）
+            fieldnames = ['pattern_index']
+            if calculate_scores and 'score' in results[0]:
+                fieldnames.append('score')
+            fieldnames.extend(['ligand_smiles', 'ligand_file', 'protein_file'])
+            
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for result in results:
+                # 出力する辞書を作成（fielднamesに含まれるキーのみ）
+                row = {key: result.get(key, '') for key in fieldnames}
+                writer.writerow(row)
+        
+        print(f"  ✓ CSV出力: {csv_path}")
     
     print(f"\n完了: {len(results)} パターンの結果を生成しました")
     return results

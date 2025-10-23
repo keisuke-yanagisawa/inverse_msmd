@@ -66,6 +66,7 @@ def main():
     print("-" * 70)
     
     output_dir_no_score = f"{output_dir}/no_score/"
+    csv_output_no_score = f"{output_dir}/no_score/results.csv"
     
     results_no_score = integrated_substructure_replacement(
         ligand_file=ligand_file,
@@ -74,14 +75,17 @@ def main():
         to_file=to_file,
         output_dir=output_dir_no_score,
         match_index=0,
-        profile_dir=None  # スコア計算をスキップ
+        profile_dir=None,  # スコア計算をスキップ
+        csv_output=csv_output_no_score
     )
     
     print(f"\n結果: {len(results_no_score)} パターン生成")
     for i, result in enumerate(results_no_score):
         print(f"  パターン {i}:")
+        print(f"    SMILES    : {result['ligand_smiles']}")
         print(f"    リガンド  : {result['ligand_file']}")
         print(f"    タンパク質: {result['protein_file']}")
+    print(f"\nCSV出力: {csv_output_no_score}")
     
     print()
     
@@ -93,6 +97,7 @@ def main():
     print("-" * 70)
     
     output_dir_score_0 = f"{output_dir}/with_score_gamma0/"
+    csv_output_score_0 = f"{output_dir}/with_score_gamma0/results.csv"
     
     results_score_0 = integrated_substructure_replacement(
         ligand_file=ligand_file,
@@ -103,15 +108,18 @@ def main():
         match_index=0,
         profile_dir=profile_dir,
         probe_id="E24",
-        gamma=0.0  # 重み付けなし
+        gamma=0.0,  # 重み付けなし
+        csv_output=csv_output_score_0
     )
     
     print(f"\n結果: {len(results_score_0)} パターン生成（スコア降順ソート済み）")
     for i, result in enumerate(results_score_0):
         print(f"  パターン {i}:")
         print(f"    スコア    : {result['score']:.2f}")
+        print(f"    SMILES    : {result['ligand_smiles']}")
         print(f"    リガンド  : {result['ligand_file']}")
         print(f"    タンパク質: {result['protein_file']}")
+    print(f"\nCSV出力: {csv_output_score_0}")
     
     print()
     
@@ -123,6 +131,7 @@ def main():
     print("-" * 70)
     
     output_dir_score_003 = f"{output_dir}/with_score_gamma003/"
+    csv_output_score_003 = f"{output_dir}/with_score_gamma003/results.csv"
     
     results_score_003 = integrated_substructure_replacement(
         ligand_file=ligand_file,
@@ -133,15 +142,18 @@ def main():
         match_index=0,
         profile_dir=profile_dir,
         probe_id="E24",
-        gamma=0.003  # 距離重み付けあり
+        gamma=0.003,  # 距離重み付けあり
+        csv_output=csv_output_score_003
     )
     
     print(f"\n結果: {len(results_score_003)} パターン生成（スコア降順ソート済み）")
     for i, result in enumerate(results_score_003):
         print(f"  パターン {i}:")
         print(f"    スコア    : {result['score']:.2f}")
+        print(f"    SMILES    : {result['ligand_smiles']}")
         print(f"    リガンド  : {result['ligand_file']}")
         print(f"    タンパク質: {result['protein_file']}")
+    print(f"\nCSV出力: {csv_output_score_003}")
     
     print()
     
@@ -166,9 +178,10 @@ def main():
     print(f"出力ディレクトリ: {output_dir}")
     print()
     print("次のステップ:")
-    print("  1. 生成されたSDFファイルを分子可視化ソフト（PyMOL、Chimera等）で確認")
-    print("  2. スコアが高いパターンを優先的に検討")
-    print("  3. 必要に応じてgamma値を調整して再実行")
+    print("  1. CSVファイルで結果を確認")
+    print("  2. 生成されたSDFファイルを分子可視化ソフト（PyMOL、Chimera等）で確認")
+    print("  3. スコアが高いパターンを優先的に検討")
+    print("  4. 必要に応じてgamma値を調整して再実行")
 
 
 if __name__ == "__main__":
