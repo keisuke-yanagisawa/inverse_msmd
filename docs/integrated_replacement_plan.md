@@ -242,22 +242,41 @@ replaced_ligand = replace_ligand_substructure(...)
 - 不要なコピーを避ける
 - 必要に応じてガベージコレクション
 
-## 実装タスクリスト
+## 実装進捗
 
-- [ ] inverse_msmd/substructure_replacement.pyの作成：基本構造とインポート
-- [ ] 部分構造探索関数の実装：find_substructure_in_ligand() - 複数マッチを返す
-- [ ] 複数マッチ可視化関数の実装：visualize_multiple_matches() - PNG出力
-- [ ] ユーザー選択機能の実装：CLIオプションで選択インデックス指定も可能に
-- [ ] atom matching関数の実装：match_substructures()でE23とE24をマッチング
-- [ ] superimpose計算関数の実装：calculate_transformation()で変換行列を取得
-- [ ] タンパク質変換関数の実装：apply_transformation_to_protein()
-- [ ] リガンド置換関数の実装：replace_ligand_substructure()
-- [ ] 統合ワークフロー関数の実装：integrated_substructure_replacement()
-- [ ] CLIスクリプトの作成：scripts/integrated_replacement.py（選択インデックスオプション付き）
-- [ ] 出力機能の実装：各パターンでSDF + PDBを別々に出力
-- [ ] テスト用のサンプル実行と動作確認
-- [ ] エラーハンドリングとバリデーションの追加
-- [ ] ドキュメントとusage exampleの作成
+> **📊 詳細な実装進捗状況は [`implementation_progress.md`](implementation_progress.md) を参照してください。**
+>
+> このドキュメントには以下の詳細情報が含まれています：
+> - 各タスクの実装内容と技術的詳細
+> - テスト結果とコード例
+> - 参考資料へのリンク
+> - 次回作業の推奨事項
+> - match_index機能テスト計画
+
+### 実装タスクリスト（概要）
+
+**Phase 1: 基本機能実装** ✅ 完了 (4/4)
+- [x] T1: モジュール基本構造作成
+- [x] T2: 部分構造探索関数実装
+- [x] T3: 複数マッチ可視化関数実装
+- [x] T4: Atom Matching関数実装
+
+**Phase 2: 座標変換機能** ⏳ 未着手 (0/3)
+- [ ] T5: Superimpose計算関数実装
+- [ ] T6: タンパク質変換関数実装
+- [ ] T7: リガンド置換関数実装
+
+**Phase 3: 統合とインターフェース** ⏳ 未着手 (0/3)
+- [ ] T8-9: 統合ワークフロー関数実装
+- [ ] T10: CLIスクリプト作成
+- [ ] T11: 出力機能実装
+
+**Phase 4: 品質保証** ⏳ 未着手 (0/3)
+- [ ] T12: 総合テスト実行
+- [ ] T13: エラーハンドリングとバリデーション追加
+- [ ] T14: ドキュメントとusage example作成
+
+**進捗率**: 29% (4/14タスク完了)
 
 ## 使用例
 
@@ -334,3 +353,4 @@ output/integrated/
 - [`scripts/replace_substructure.py`](scripts/replace_substructure.py)
 - [`inverse_msmd/utils/bio_utils.py`](inverse_msmd/utils/bio_utils.py)
 - [`inverse_msmd/utils/mol_utils.py`](inverse_msmd/utils/mol_utils.py)
+- **[`implementation_progress.md`](implementation_progress.md)** - 詳細な実装進捗記録
