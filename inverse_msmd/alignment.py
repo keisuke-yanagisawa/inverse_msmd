@@ -190,8 +190,8 @@ def find_atom_matches(
 
 def align_structure(
     protein: Structure,
-    ligand_coords: npt.NDArray[np.float_],
-    probe_coords: npt.NDArray[np.float_],
+    ligand_coords: npt.NDArray[np.float64],
+    probe_coords: npt.NDArray[np.float64],
     atom_pairs: npt.NDArray[np.int_]
 ) -> Structure:
     """

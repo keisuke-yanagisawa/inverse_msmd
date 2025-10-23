@@ -58,8 +58,8 @@ class SuperImposer(TransformerMixin, BaseEstimator):
     >>> transformed = si.transform(coords_to_move)
     """
 
-    rot_: npt.NDArray[np.float_]
-    tran_: npt.NDArray[np.float_]
+    rot_: npt.NDArray[np.float64]
+    tran_: npt.NDArray[np.float64]
 
     def __init__(self):
         """SuperImposerを初期化します。"""
@@ -116,7 +116,7 @@ class SuperImposer(TransformerMixin, BaseEstimator):
         self._superimpose(coords, reference_coords)
         return self
 
-    def transform(self, coords: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
+    def transform(self, coords: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         座標を変換します。
         
@@ -141,7 +141,7 @@ class SuperImposer(TransformerMixin, BaseEstimator):
         coords = np.array(coords)
         return np.dot(coords, self.rot_) + self.tran_
 
-    def inverse_transform(self, coords: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
+    def inverse_transform(self, coords: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         逆変換を実行します。
         
@@ -207,7 +207,7 @@ def get_structure(filepath: str, structname="") -> Structure:
 
 def get_atom_attr(atom: Atom,
                   attr: Literal["resid", "resname", "coord", "element", "fullname"]
-                  ) -> Union[int, str, npt.NDArray[np.float_], tuple]:
+                  ) -> Union[int, str, npt.NDArray[np.float64], tuple]:
     """
     原子オブジェクトから属性を取得します。
     
