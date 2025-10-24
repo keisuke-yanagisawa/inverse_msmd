@@ -54,6 +54,16 @@ def main():
     print(f"出力ディレクトリ: {output_base_dir}")
     print()
     
+    # コマンドライン引数で並列処理を選択可能
+    use_parallel = "--parallel" in sys.argv
+    max_workers = 4
+    
+    if use_parallel:
+        print(f"並列処理モード（最大{max_workers}ワーカー）で実行します")
+    else:
+        print("順次処理モードで実行します（--parallelオプションで並列処理可能）")
+    print()
+    
     # バッチ処理を実行
     try:
         result = run_batch_processing(
@@ -63,7 +73,8 @@ def main():
             probe_base_dir=str(probe_base_dir),
             profile_base_dir=str(profile_base_dir),
             output_base_dir=str(output_base_dir),
-            parallel=False,  # Phase 2で並列処理を実装予定
+            parallel=use_parallel,
+            max_workers=max_workers,
             continue_on_error=True
         )
         

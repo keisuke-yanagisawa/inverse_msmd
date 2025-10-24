@@ -33,6 +33,7 @@ import json
 import time
 from pathlib import Path
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from inverse_msmd.substructure_replacement import integrated_substructure_replacement
 
@@ -571,6 +572,44 @@ def process_single_job(
     return result
 
 
+def _process_job_wrapper(args):
+    """
+    並列処理用のジョブ処理ラッパー関数
+    
+    ProcessPoolExecutorでは関数の引数をpickle化する必要があるため、
+    ロガーは各プロセスで再作成します。
+    
+    Parameters
+    ----------
+    args : tuple
+        (job, ligand_file, protein_file, probe_base_dir,
+         profile_base_dir, output_base_dir) のタプル
+    
+    Returns
+    -------
+    JobResult
+        ジョブ実行結果
+    """
+    job, ligand_file, protein_file, probe_base_dir, profile_base_dir, output_base_dir = args
+    
+    # 各プロセスで独自のロガーを作成（pickle化の問題を回避）
+    logger = logging.getLogger(f"batch_processing.worker.{job.job_id}")
+    logger.setLevel(logging.INFO)
+    
+    # ハンドラが既に存在する場合はクリア
+    logger.handlers.clear()
+    
+    return process_single_job(
+        job,
+        ligand_file,
+        protein_file,
+        probe_base_dir,
+        profile_base_dir,
+        output_base_dir,
+        logger
+    )
+
+
 def run_batch_processing(
     batch_csv: str,
     ligand_file: str,
@@ -601,9 +640,9 @@ def run_batch_processing(
     output_base_dir : str
         出力ベースディレクトリ
     parallel : bool, default=False
-        並列処理を有効にするか（Phase 2で実装）
+        並列処理を有効にするか
     max_workers : int, default=4
-        並列処理時の最大ワーカー数
+        並列処理時の最大ワーカー数（parallelがTrueの場合に使用）
     continue_on_error : bool, default=True
         エラー発生時も処理を継続するか
     log_file : Optional[str], default=None
@@ -669,58 +708,113 @@ def run_batch_processing(
     
     batch_start_time = time.time()
     
-    # 並列処理の警告（Phase 2で実装予定）
-    if parallel:
-        logger.warning(
-            "並列処理はPhase 2で実装予定です。順次処理で実行します。"
-        )
-    
     # 各ジョブを処理
     logger.info(f"\n{'='*70}")
     logger.info(f"ジョブ処理を開始")
+    if parallel:
+        logger.info(f"並列処理モード: 最大{max_workers}ワーカー")
+    else:
+        logger.info(f"順次処理モード")
     logger.info(f"{'='*70}\n")
     
-    for job in tqdm(jobs, desc="Processing jobs"):
-        try:
-            result = process_single_job(
-                job,
-                ligand_file,
-                protein_file,
-                probe_base_dir,
-                profile_base_dir,
-                output_base_dir,
-                logger
-            )
+    if parallel:
+        # 並列処理
+        logger.info(f"{max_workers}個のワーカーで並列処理を実行します")
+        
+        # 各ジョブの引数をタプルとして準備
+        job_args = [
+            (job, ligand_file, protein_file, probe_base_dir, profile_base_dir, output_base_dir)
+            for job in jobs
+        ]
+        
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # ジョブを投入
+            future_to_job = {
+                executor.submit(_process_job_wrapper, args): args[0]
+                for args in job_args
+            }
             
-            batch_result.job_results.append(result)
-            
-            # ステータスカウント
-            if result.status == "success":
-                batch_result.num_success += 1
-            elif result.status == "failed":
-                batch_result.num_failed += 1
-            elif result.status == "skipped":
-                batch_result.num_skipped += 1
+            # 完了したジョブから結果を収集
+            with tqdm(total=len(jobs), desc="Processing jobs") as pbar:
+                for future in as_completed(future_to_job):
+                    job = future_to_job[future]
+                    try:
+                        result = future.result()
+                        batch_result.job_results.append(result)
+                        
+                        # ステータスカウント
+                        if result.status == "success":
+                            batch_result.num_success += 1
+                        elif result.status == "failed":
+                            batch_result.num_failed += 1
+                        elif result.status == "skipped":
+                            batch_result.num_skipped += 1
+                        
+                        pbar.update(1)
+                        
+                    except Exception as e:
+                        logger.error(f"ジョブ {job.job_id} の処理中に予期しないエラー: {e}")
+                        
+                        if not continue_on_error:
+                            logger.error("continue_on_error=Falseのため処理を中断します")
+                            raise
+                        
+                        # エラー結果を記録
+                        error_result = JobResult(
+                            job_id=job.job_id,
+                            from_probe=job.from_probe,
+                            to_probe=job.to_probe,
+                            match_index=job.match_index,
+                            status="failed",
+                            error_message=str(e),
+                            error_type=type(e).__name__
+                        )
+                        batch_result.job_results.append(error_result)
+                        batch_result.num_failed += 1
+                        pbar.update(1)
+    else:
+        # 順次処理
+        for job in tqdm(jobs, desc="Processing jobs"):
+            try:
+                result = process_single_job(
+                    job,
+                    ligand_file,
+                    protein_file,
+                    probe_base_dir,
+                    profile_base_dir,
+                    output_base_dir,
+                    logger
+                )
                 
-        except Exception as e:
-            logger.error(f"ジョブ {job.job_id} の処理中に予期しないエラー: {e}")
-            
-            if not continue_on_error:
-                logger.error("continue_on_error=Falseのため処理を中断します")
-                raise
-            
-            # エラー結果を記録
-            error_result = JobResult(
-                job_id=job.job_id,
-                from_probe=job.from_probe,
-                to_probe=job.to_probe,
-                match_index=job.match_index,
-                status="failed",
-                error_message=str(e),
-                error_type=type(e).__name__
-            )
-            batch_result.job_results.append(error_result)
-            batch_result.num_failed += 1
+                batch_result.job_results.append(result)
+                
+                # ステータスカウント
+                if result.status == "success":
+                    batch_result.num_success += 1
+                elif result.status == "failed":
+                    batch_result.num_failed += 1
+                elif result.status == "skipped":
+                    batch_result.num_skipped += 1
+                    
+            except Exception as e:
+                logger.error(f"ジョブ {job.job_id} の処理中に予期しないエラー: {e}")
+                
+                if not continue_on_error:
+                    logger.error("continue_on_error=Falseのため処理を中断します")
+                    raise
+                
+                # エラー結果を記録
+                error_result = JobResult(
+                    job_id=job.job_id,
+                    from_probe=job.from_probe,
+                    to_probe=job.to_probe,
+                    match_index=job.match_index,
+                    status="failed",
+                    error_message=str(e),
+                    error_type=type(e).__name__
+                )
+                batch_result.job_results.append(error_result)
+                batch_result.num_failed += 1
     
     # バッチ処理終了
     batch_end_time = time.time()

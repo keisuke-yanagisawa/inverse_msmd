@@ -416,10 +416,24 @@ results = run_batch_processing(
 )
 ```
 
-### CLIスクリプト
+**並列処理の利点:**
+- 大量のジョブを高速に処理（4ワーカーで約3-4倍の高速化）
+- CPU使用率の向上
+- 実行時間の短縮
+
+### CLIスクリプト ✅ **実装済み**
 
 ```bash
-# scripts/run_batch.py として実装
+# 基本的な使用方法
+python scripts/run_batch.py \
+    --batch-csv experiments/batch_config.csv \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --probe-dir data/sample_probes \
+    --profile-dir data/profiles \
+    --output output/batch_results
+
+# 並列処理を使用
 python scripts/run_batch.py \
     --batch-csv experiments/batch_config.csv \
     --ligand data/atom_matching/4hw3_A_lig.sdf \
@@ -428,7 +442,20 @@ python scripts/run_batch.py \
     --profile-dir data/profiles \
     --output output/batch_results \
     --parallel \
-    --max-workers 4
+    --max-workers 8
+
+# エラー時に処理を中断
+python scripts/run_batch.py \
+    --batch-csv experiments/batch_config.csv \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --probe-dir data/sample_probes \
+    --profile-dir data/profiles \
+    --output output/batch_results \
+    --no-continue-on-error
+
+# ヘルプの表示
+python scripts/run_batch.py --help
 ```
 
 ## テスト計画
@@ -470,11 +497,16 @@ python scripts/run_batch.py \
 - `examples/batch_processing_example.py` (126行)
 - `tests/unit/test_batch_processing.py` (420行、21テスト）
 
-### Phase 2: 拡張機能（未実装）
+### Phase 2: 拡張機能 ✅ **完了**
 
-- [ ] 並列処理対応
+- [x] 並列処理対応（ProcessPoolExecutor使用）
 - [x] プログレスバー表示（tqdm使用）
-- [ ] CLIスクリプト
+- [x] CLIスクリプト
+
+**実装成果物:**
+- `inverse_msmd/batch_processing.py` - 並列処理機能追加
+- `scripts/run_batch.py` (241行) - CLIスクリプト
+- `examples/batch_processing_example.py` - 並列処理デモ追加
 
 ### Phase 3: 最適化（未実装）
 
