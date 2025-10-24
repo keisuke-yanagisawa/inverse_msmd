@@ -30,6 +30,7 @@
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
+import copy
 import numpy as np
 import numpy.typing as npt
 from rdkit import Chem
@@ -457,6 +458,182 @@ def replace_ligand_substructure(
         replacement_map[final_idx] = replacement_idx
     
     return new_mol, replacement_map
+def generate_all_replacement_candidates(
+    mol: Chem.Mol,
+    from_mol: Chem.Mol,
+    to_mol: Chem.Mol,
+    match: Tuple[int, ...]
+) -> List[Chem.Mol]:
+    """
+    すべての可能な置換候補を生成します。
+    
+    1箇所の接続点のみを前提とし、置換先の各原子について
+    置換候補を生成します。
+    
+    Parameters
+    ----------
+    mol : Chem.Mol
+        対象の分子
+    from_mol : Chem.Mol
+        検索する部分構造（水素除去済み）
+    to_mol : Chem.Mol
+        置き換える部分構造（水素除去済み）
+    match : Tuple[int, ...]
+        マッチした原子インデックスのタプル
+    
+    Returns
+    -------
+    List[Chem.Mol]
+        すべての有効な置換候補のリスト
+        無効な候補（Sanitizeに失敗）は含まれない
+    
+    Raises
+    ------
+    ValueError
+        有効な置換候補が1つも生成できない場合
+    
+    Examples
+    --------
+    >>> ligand = next(Chem.SDMolSupplier("ligand.sdf"))
+    >>> from_mol = read_mol_from_pdb_smi("E23.pdb", "E23.smi")
+    >>> to_mol = read_mol_from_pdb_smi("E24.pdb", "E24.smi")
+    >>> from_no_h = Chem.RemoveHs(from_mol)
+    >>> to_no_h = Chem.RemoveHs(to_mol)
+    >>> ligand_no_h = Chem.RemoveHs(ligand)
+    >>> matches = ligand_no_h.GetSubstructMatches(from_no_h)
+    >>> candidates = generate_all_replacement_candidates(
+    ...     ligand_no_h, from_no_h, to_no_h, matches[0]
+    ... )
+    >>> print(f"生成された候補数: {len(candidates)}")
+    
+    Notes
+    -----
+    - 接続点は自動検出されます
+    - 化学的に妥当な候補のみが返されます
+    - 各候補はSanitizeを通過しています
+    """
+    # マッチした部分構造の原子インデックスをセットに変換
+    match_set = set(match)
+    
+    # 接続点を見つける（1箇所のみを想定）
+    attachment_info = None  # (neighbor_idx, bond_type)
+    
+    for atom_idx in match:
+        atom = mol.GetAtomWithIdx(atom_idx)
+        for bond in atom.GetBonds():
+            neighbor_idx = bond.GetOtherAtomIdx(atom_idx)
+            if neighbor_idx not in match_set:
+                attachment_info = (neighbor_idx, bond.GetBondType())
+                break
+        if attachment_info:
+            break
+    
+    if attachment_info is None:
+        # 接続点がない場合（孤立した部分構造）
+        return [create_replacement_molecule(mol, match, to_mol, [])]
+    
+    neighbor_idx, bond_type = attachment_info
+    
+    # 新しい部分構造の各原子について置換候補を生成
+    n_to_atoms = to_mol.GetNumAtoms()
+    
+    valid_mols = []
+    
+    for to_atom_idx in range(n_to_atoms):
+        connections = [(to_atom_idx, neighbor_idx, bond_type)]
+        
+        try:
+            new_mol = create_replacement_molecule(mol, match, to_mol, connections)
+            Chem.SanitizeMol(new_mol)
+            valid_mols.append(new_mol)
+        except:
+            # 無効な候補はスキップ
+            pass
+    
+    if not valid_mols:
+        raise ValueError("有効な置換候補を生成できませんでした")
+    
+    return valid_mols
+
+
+def create_replacement_molecule(
+    mol: Chem.Mol,
+    match: Tuple[int, ...],
+    to_mol: Chem.Mol,
+    connections: List[Tuple[int, int, Chem.BondType]]
+) -> Chem.Mol:
+    """
+    部分構造を置き換えた新しい分子を作成します。
+    
+    Parameters
+    ----------
+    mol : Chem.Mol
+        元の分子
+    match : Tuple[int, ...]
+        マッチした原子インデックス
+    to_mol : Chem.Mol
+        置き換える部分構造
+    connections : List[Tuple[int, int, Chem.BondType]]
+        接続情報のリスト
+        [(to_atom_idx, mol_neighbor_idx, bond_type), ...]
+    
+    Returns
+    -------
+    Chem.Mol
+        置換後の分子（元のプロパティを保持）
+    
+    Examples
+    --------
+    >>> from rdkit import Chem
+    >>> mol = Chem.MolFromSmiles("CCc1ccccc1")
+    >>> from_mol = Chem.MolFromSmiles("c1ccccc1")
+    >>> to_mol = Chem.MolFromSmiles("C1CCCCC1")
+    >>> mol_no_h = Chem.RemoveHs(mol)
+    >>> from_no_h = Chem.RemoveHs(from_mol)
+    >>> to_no_h = Chem.RemoveHs(to_mol)
+    >>> match = mol_no_h.GetSubstructMatch(from_no_h)
+    >>> # 接続点を見つける
+    >>> connections = [(0, 1, Chem.BondType.SINGLE)]
+    >>> new_mol = create_replacement_molecule(mol_no_h, match, to_no_h, connections)
+    >>> Chem.SanitizeMol(new_mol)
+    >>> print(Chem.MolToSmiles(new_mol))
+    
+    Notes
+    -----
+    - 元の分子のプロパティはdeep copyで保持されます
+    - 座標情報も保持されます（コンフォーマーがある場合）
+    """
+    # RWMolオブジェクトを作成（編集可能な分子）
+    # deep copyで元のプロパティを保持
+    rwmol = Chem.RWMol(copy.deepcopy(mol))
+    
+    # 新しい部分構造の原子を追加
+    new_atom_map = {}  # to_molの原子インデックス -> rwmolの原子インデックス
+    for atom in to_mol.GetAtoms():
+        new_idx = rwmol.AddAtom(atom)
+        new_atom_map[atom.GetIdx()] = new_idx
+    
+    # 新しい部分構造内の結合を追加
+    for bond in to_mol.GetBonds():
+        begin_idx = new_atom_map[bond.GetBeginAtomIdx()]
+        end_idx = new_atom_map[bond.GetEndAtomIdx()]
+        rwmol.AddBond(begin_idx, end_idx, bond.GetBondType())
+    
+    # 接続を追加
+    for to_atom_idx, mol_neighbor_idx, bond_type in connections:
+        new_atom_idx = new_atom_map[to_atom_idx]
+        rwmol.AddBond(new_atom_idx, mol_neighbor_idx, bond_type)
+    
+    # 古い部分構造の原子を削除（逆順で削除してインデックスのずれを防ぐ）
+    for atom_idx in sorted(match, reverse=True):
+        rwmol.RemoveAtom(atom_idx)
+    
+    # RWMolをMolに変換
+    new_mol = rwmol.GetMol()
+    
+    return new_mol
+
+
 
 def check_steric_clash(
     mol: Chem.Mol,
