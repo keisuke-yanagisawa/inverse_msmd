@@ -30,6 +30,15 @@ profile_scoring : プロファイルスコア計算機能
     相互作用プロファイルに基づくマッチングスコア計算
     - calculate_profile_score: プロファイルスコア計算
 
+batch_processing : バッチ処理機能
+    複数の置換パターンに対するマッチングスコア一括計算
+    - run_batch_processing: バッチ処理メイン関数（推奨）
+    - BatchJob: ジョブ設定データクラス
+    - JobResult: ジョブ実行結果データクラス
+    - BatchResult: バッチ処理結果データクラス
+    - load_batch_config: バッチCSV読み込み
+    - save_batch_summary: 結果保存
+
 utils.bio_utils : BioPythonユーティリティ
     PDB構造の操作と重ね合わせ
     - SuperImposer: 構造重ね合わせクラス
@@ -120,6 +129,14 @@ from .substructure_replacement import (
     integrated_substructure_replacement
 )
 from .profile_scoring import calculate_profile_score
+from .batch_processing import (
+    BatchJob,
+    JobResult,
+    BatchResult,
+    load_batch_config,
+    save_batch_summary,
+    run_batch_processing
+)
 
 __version__ = "0.2.0"
 __author__ = "Keisuke Yanagisawa"
@@ -148,4 +165,11 @@ __all__ = [
     "integrated_substructure_replacement",
     # プロファイルスコア計算
     "calculate_profile_score",
+    # バッチ処理
+    "BatchJob",
+    "JobResult",
+    "BatchResult",
+    "load_batch_config",
+    "save_batch_summary",
+    "run_batch_processing",
 ]

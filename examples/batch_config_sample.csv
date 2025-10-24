@@ -1,0 +1,4 @@
+job_id,from_probe,to_probe,match_index,comment,enabled
+exp_001,E23,E24,0,基本パターン - E23からE24への置換,yes
+exp_002,E23,E24,1,基本パターン - 別の置換位置,yes
+exp_003,E23,A08,0,プローブ変更 - E23からA08へ,yes

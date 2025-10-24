@@ -453,25 +453,33 @@ python scripts/run_batch.py \
 
 ## 実装優先順位
 
-### Phase 1: 基本機能（必須）
+### Phase 1: 基本機能（必須） ✅ **完了**
 
-- [ ] バッチ設定CSV読み込み
-- [ ] 順次処理実装
-- [ ] サマリーCSV出力
-- [ ] エラーハンドリング
-- [ ] 基本的なログ出力
+- [x] バッチ設定CSV読み込み
+- [x] 順次処理実装
+- [x] サマリーCSV出力
+- [x] エラーハンドリング
+- [x] 基本的なログ出力
+- [x] ユニットテスト（21テスト、全てパス）
+- [x] サンプルスクリプト
+- [x] JSON出力対応
 
-### Phase 2: 拡張機能
+**実装成果物:**
+- `inverse_msmd/batch_processing.py` (743行)
+- `examples/batch_config_sample.csv`
+- `examples/batch_processing_example.py` (126行)
+- `tests/unit/test_batch_processing.py` (420行、21テスト）
+
+### Phase 2: 拡張機能（未実装）
 
 - [ ] 並列処理対応
-- [ ] プログレスバー表示
-- [ ] JSON出力対応
+- [x] プログレスバー表示（tqdm使用）
 - [ ] CLIスクリプト
 
-### Phase 3: 最適化
+### Phase 3: 最適化（未実装）
 
 - [ ] メモリ使用量の最適化
-- [ ] 実行時間の計測とレポート
+- [x] 実行時間の計測とレポート
 - [ ] リトライ機能
 - [ ] チェックポイント機能（中断・再開）
 
