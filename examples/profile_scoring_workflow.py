@@ -90,85 +90,35 @@ def main():
     print()
     
     # ===================================================================
-    # 例2: プロファイルスコア計算あり（重み付けなし）
+    # 例2: プロファイルスコア計算あり
     # ===================================================================
     print("-" * 70)
-    print("例2: プロファイルスコア計算（gamma=0.0、重み付けなし）")
+    print("例2: プロファイルスコア計算")
     print("-" * 70)
     
-    output_dir_score_0 = f"{output_dir}/with_score_gamma0/"
-    csv_output_score_0 = f"{output_dir}/with_score_gamma0/results.csv"
+    output_dir_score = f"{output_dir}/with_score/"
+    csv_output_score = f"{output_dir}/with_score/results.csv"
     
-    results_score_0 = integrated_substructure_replacement(
+    results_score = integrated_substructure_replacement(
         ligand_file=ligand_file,
         protein_file=protein_file,
         from_file=from_file,
         to_file=to_file,
-        output_dir=output_dir_score_0,
+        output_dir=output_dir_score,
         match_index=0,
         profile_dir=profile_dir,
         probe_id="E24",
-        gamma=0.0,  # 重み付けなし
-        csv_output=csv_output_score_0
+        csv_output=csv_output_score
     )
     
-    print(f"\n結果: {len(results_score_0)} パターン生成（スコア降順ソート済み）")
-    for i, result in enumerate(results_score_0):
+    print(f"\n結果: {len(results_score)} パターン生成（スコア降順ソート済み）")
+    for i, result in enumerate(results_score):
         print(f"  パターン {i}:")
         print(f"    スコア    : {result['score']:.2f}")
         print(f"    SMILES    : {result['ligand_smiles']}")
         print(f"    リガンド  : {result['ligand_file']}")
         print(f"    タンパク質: {result['protein_file']}")
-    print(f"\nCSV出力: {csv_output_score_0}")
-    
-    print()
-    
-    # ===================================================================
-    # 例3: プロファイルスコア計算あり（距離重み付けあり）
-    # ===================================================================
-    print("-" * 70)
-    print("例3: プロファイルスコア計算（gamma=0.003、距離重み付けあり）")
-    print("-" * 70)
-    
-    output_dir_score_003 = f"{output_dir}/with_score_gamma003/"
-    csv_output_score_003 = f"{output_dir}/with_score_gamma003/results.csv"
-    
-    results_score_003 = integrated_substructure_replacement(
-        ligand_file=ligand_file,
-        protein_file=protein_file,
-        from_file=from_file,
-        to_file=to_file,
-        output_dir=output_dir_score_003,
-        match_index=0,
-        profile_dir=profile_dir,
-        probe_id="E24",
-        gamma=0.003,  # 距離重み付けあり
-        csv_output=csv_output_score_003
-    )
-    
-    print(f"\n結果: {len(results_score_003)} パターン生成（スコア降順ソート済み）")
-    for i, result in enumerate(results_score_003):
-        print(f"  パターン {i}:")
-        print(f"    スコア    : {result['score']:.2f}")
-        print(f"    SMILES    : {result['ligand_smiles']}")
-        print(f"    リガンド  : {result['ligand_file']}")
-        print(f"    タンパク質: {result['protein_file']}")
-    print(f"\nCSV出力: {csv_output_score_003}")
-    
-    print()
-    
-    # ===================================================================
-    # スコアの比較
-    # ===================================================================
-    print("-" * 70)
-    print("スコア比較")
-    print("-" * 70)
-    
-    if results_score_0 and results_score_003:
-        print(f"\ngamma=0.0の最高スコア  : {results_score_0[0]['score']:.2f}")
-        print(f"gamma=0.003の最高スコア: {results_score_003[0]['score']:.2f}")
-        print()
-        print("注: gamma値が異なると、距離による重み付けの影響でスコアが変わります")
+    print(f"\nCSV出力: {csv_output_score}")
     
     print()
     print("=" * 70)

@@ -90,13 +90,6 @@ def main():
              "profile-dirが指定されている場合は必須です"
     )
     parser.add_argument(
-        "--gamma",
-        type=float,
-        default=0.0,
-        help="距離重み付けパラメータ（デフォルト: 0.0）。"
-             "0.0=重み付けなし、0.003=距離重み付けあり"
-    )
-    parser.add_argument(
         "--verbose",
         action="store_true",
         help="詳細な出力を表示"
@@ -177,8 +170,7 @@ def main():
             output_dir=args.output,
             match_index=args.match_index,
             profile_dir=args.profile_dir,
-            probe_id=args.probe_id,
-            gamma=args.gamma
+            probe_id=args.probe_id
         )
         
         # 結果のサマリーを表示

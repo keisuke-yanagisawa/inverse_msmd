@@ -68,8 +68,7 @@ def calculate_profile_score(
     protein: Structure,
     probe_center: np.ndarray,
     profile_dir: str,
-    probe_id: str,
-    gamma: float = 0.0
+    probe_id: str
 ) -> float:
     """
     タンパク質構造とプローブ中心からマッチングスコアを計算
@@ -84,8 +83,6 @@ def calculate_profile_score(
         プロファイルファイルのディレクトリパス
     probe_id : str
         プローブID（ファイル名プレフィックス、例: "E24"）
-    gamma : float, default=0.0
-        距離重み付けパラメータ（0.0=重み付けなし）
     
     Returns
     -------
@@ -105,8 +102,7 @@ def calculate_profile_score(
 
 3. スコア計算
    - 3D線形補間: `profiles[resname].interpolated([x], [y], [z])[0]`
-   - 距離重み: `w = exp(-gamma * d^2)`
-   - スコア累積: `score += log(value) * weight`
+   - スコア累積: `score += log(value)`
 
 **完了条件:**
 - [ ] 関数が正しく動作する
@@ -116,7 +112,6 @@ def calculate_profile_score(
 
 **テストケース:**
 - [ ] E24プロファイルで4hw3_Aタンパク質のスコアを計算
-- [ ] gamma=0.0とgamma=0.003で異なる結果が得られる
 - [ ] GLY残基のみのタンパク質でエラーが発生しない
 
 **技術的課題:**
@@ -136,7 +131,7 @@ def calculate_profile_score(
 **ステータス:** ⏸️ 未着手
 
 **タスク内容:**
-- [ ] 新規パラメータ追加（profile_dir, probe_id, gamma）
+- [ ] 新規パラメータ追加（profile_dir, probe_id）
 - [ ] パラメータバリデーションの実装
 - [ ] スコア計算の統合（オプション）
 - [ ] 結果にスコア情報を追加
@@ -145,8 +140,7 @@ def calculate_profile_score(
 **新規パラメータ:**
 ```python
 profile_dir: Optional[str] = None,  # プロファイルディレクトリパス
-probe_id: Optional[str] = None,     # プローブID
-gamma: float = 0.0                  # 距離重み付けパラメータ
+probe_id: Optional[str] = None      # プローブID
 ```
 
 **実装のポイント:**
@@ -170,7 +164,7 @@ gamma: float = 0.0                  # 距離重み付けパラメータ
        transformed_center = np.dot(to_center, rot) + tran
        score = calculate_profile_score(
            protein_copy, transformed_center,
-           profile_dir, probe_id, gamma
+           profile_dir, probe_id
        )
        result['score'] = score
    ```
@@ -248,12 +242,10 @@ __version__ = "0.2.0"
 
 **新規引数:**
 ```python
-parser.add_argument("--profile-dir", default=None, 
+parser.add_argument("--profile-dir", default=None,
     help="プロファイルディレクトリのパス")
 parser.add_argument("--probe-id", default=None,
     help="プローブID（例: E24）")
-parser.add_argument("--gamma", type=float, default=0.0,
-    help="距離重み付けパラメータ")
 ```
 
 **完了条件:**

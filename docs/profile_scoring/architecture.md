@@ -51,8 +51,7 @@ def calculate_profile_score(
     protein: Structure,
     probe_center: np.ndarray,
     profile_dir: str,
-    probe_id: str,
-    gamma: float = 0.0
+    probe_id: str
 ) -> float
 ```
 
@@ -88,13 +87,8 @@ flowchart TD
    - 各Cβ原子の座標でプロファイル値を線形補間
    - グリッドポイント間の値を補間
 
-3. **距離重み付け:**
-   - `w(d) = exp(-gamma * d^2)`
-   - gamma=0.0で重み付けなし（全て1.0）
-   - gamma=0.003で距離に応じた減衰
-
-4. **スコア計算:**
-   - `score = Σ log(profile_value) * weight`
+3. **スコア計算:**
+   - `score = Σ log(profile_value)`
    - 対数スケールで統合
 
 ### 2. substructure_replacement.py（拡張）
@@ -112,8 +106,7 @@ def integrated_substructure_replacement(
     output_dir: str,
     match_index: Optional[int] = None,
     profile_dir: Optional[str] = None,      # 新規
-    probe_id: Optional[str] = None,         # 新規
-    gamma: float = 0.0                      # 新規
+    probe_id: Optional[str] = None          # 新規
 ) -> List[Dict[str, Union[str, float, int]]]
 ```
 

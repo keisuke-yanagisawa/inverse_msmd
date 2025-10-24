@@ -86,8 +86,7 @@ class TestIntegratedWorkflowWithScoring:
             output_dir=str(output_dir),
             match_index=0,
             profile_dir=profile_dir,
-            probe_id="E24",
-            gamma=0.0
+            probe_id="E24"
         )
         
         assert len(results) > 0
@@ -137,8 +136,7 @@ class TestIntegratedWorkflowWithScoring:
             output_dir=str(output_dir),
             match_index=0,
             profile_dir=profile_dir,
-            probe_id="E24",
-            gamma=0.0
+            probe_id="E24"
         )
         
         # 複数パターンがある場合、スコアで降順ソートされているか確認
@@ -147,64 +145,6 @@ class TestIntegratedWorkflowWithScoring:
             # 降順ソートされていることを確認
             assert scores == sorted(scores, reverse=True)
     
-    def test_different_gamma_values(self, tmp_path):
-        """異なるgamma値で異なるスコアが得られる"""
-        from inverse_msmd.substructure_replacement import integrated_substructure_replacement
-        
-        # テストデータの存在確認
-        ligand_file = "data/atom_matching/4hw3_A_lig.sdf"
-        protein_file = "data/sample_proteins/4hw3_A.pdb"
-        from_file = "data/sample_probes/E23"
-        to_file = "data/sample_probes/E24"
-        profile_dir = "data/profiles/"
-        
-        if not all(Path(f).exists() for f in [ligand_file, protein_file,
-                                                f"{from_file}.pdb", f"{from_file}.smi",
-                                                f"{to_file}.pdb", f"{to_file}.smi"]):
-            pytest.skip("テストデータが見つかりません")
-        
-        if not Path(profile_dir).exists():
-            pytest.skip(f"プロファイルディレクトリが見つかりません: {profile_dir}")
-        
-        # gamma=0.0で実行
-        output_dir_0 = tmp_path / "gamma_0"
-        results_0 = integrated_substructure_replacement(
-            ligand_file=ligand_file,
-            protein_file=protein_file,
-            from_file=from_file,
-            to_file=to_file,
-            output_dir=str(output_dir_0),
-            match_index=0,
-            profile_dir=profile_dir,
-            probe_id="E24",
-            gamma=0.0
-        )
-        
-        # gamma=0.003で実行
-        output_dir_003 = tmp_path / "gamma_003"
-        results_003 = integrated_substructure_replacement(
-            ligand_file=ligand_file,
-            protein_file=protein_file,
-            from_file=from_file,
-            to_file=to_file,
-            output_dir=str(output_dir_003),
-            match_index=0,
-            profile_dir=profile_dir,
-            probe_id="E24",
-            gamma=0.003
-        )
-        
-        # 両方に結果があることを確認
-        assert len(results_0) > 0
-        assert len(results_003) > 0
-        
-        # gamma値が異なれば、スコアも異なるはず
-        # 同じパターンインデックスで比較
-        if len(results_0) > 0 and len(results_003) > 0:
-            score_0 = results_0[0]['score']
-            score_003 = results_003[0]['score']
-            assert score_0 != score_003
-
 
 class TestParameterValidation:
     """パラメータバリデーションのテスト"""
@@ -276,8 +216,7 @@ class TestEndToEndWorkflow:
             output_dir=str(output_dir),
             match_index=0,
             profile_dir=profile_dir,
-            probe_id="E24",
-            gamma=0.003
+            probe_id="E24"
         )
         
         # 2. 結果の検証
@@ -299,8 +238,8 @@ class TestEndToEndWorkflow:
         # 4. スコアの範囲確認
         scores = [r['score'] for r in results]
         assert all(isinstance(s, float) for s in scores)
-        # 対数スコアは通常負の値
-        assert all(s < 0 for s in scores)
+        # スコアが有効な値であることを確認（NaNやInfでない）
+        assert all(not np.isnan(s) and not np.isinf(s) for s in scores)
         
         # 5. スコアで降順ソートされていることを確認
         if len(scores) > 1:

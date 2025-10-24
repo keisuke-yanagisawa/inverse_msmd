@@ -119,36 +119,19 @@ mkdir -p test_output
 
 #### T1-4: スコア計算テスト
 
-- [ ] **正常系: スコア計算（gamma=0.0）**
+- [ ] **正常系: スコア計算**
   ```python
-  def test_calculate_score_no_weight():
-      """重み付けなしでスコアが計算される"""
+  def test_calculate_score():
+      """スコアが正しく計算される"""
       score = calculate_profile_score(
           protein, probe_center,
-          "data/profiles/", "E24", gamma=0.0
+          "data/profiles/", "E24"
       )
       assert isinstance(score, float)
       assert score < 0  # 対数スコアは通常負
   ```
   
   **期待結果:** floatの負の値が返される
-
-- [ ] **正常系: スコア計算（gamma=0.003）**
-  ```python
-  def test_calculate_score_with_weight():
-      """距離重み付けありでスコアが計算される"""
-      score_weighted = calculate_profile_score(
-          protein, probe_center,
-          "data/profiles/", "E24", gamma=0.003
-      )
-      score_no_weight = calculate_profile_score(
-          protein, probe_center,
-          "data/profiles/", "E24", gamma=0.0
-      )
-      assert score_weighted != score_no_weight
-  ```
-  
-  **期待結果:** gamma値によってスコアが変化する
 
 - [ ] **エッジケース: 負のプロファイル値の処理**
   ```python
@@ -205,8 +188,7 @@ mkdir -p test_output
           to_file="data/sample_probes/E24",
           output_dir="test_output/with_score/",
           profile_dir="data/profiles/",
-          probe_id="E24",
-          gamma=0.0
+          probe_id="E24"
       )
       assert len(results) > 0
       assert 'score' in results[0]
@@ -304,7 +286,6 @@ mkdir -p test_output
   **期待結果:**
   - `--profile-dir`オプションが表示される
   - `--probe-id`オプションが表示される
-  - `--gamma`オプションが表示される
 
 - [ ] **スコア計算なしの実行**
   ```bash
@@ -328,7 +309,6 @@ mkdir -p test_output
       --output test_output/cli_with_score/ \
       --profile-dir data/profiles/ \
       --probe-id E24 \
-      --gamma 0.0 \
       --verbose
   ```
   
@@ -354,8 +334,7 @@ mkdir -p test_output
           to_file="data/sample_probes/E24",
           output_dir="test_output/e2e/",
           profile_dir="data/profiles/",
-          probe_id="E24",
-          gamma=0.003
+          probe_id="E24"
       )
       
       # 2. 結果の検証

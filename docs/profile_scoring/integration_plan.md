@@ -27,7 +27,6 @@
 |-----------|-----|----------|------|
 | `profile_dir` | Optional[str] | None | プロファイルディレクトリパス |
 | `probe_id` | Optional[str] | None | プローブID（例: "E24"） |
-| `gamma` | float | 0.0 | 距離重み付けパラメータ |
 
 **プロファイルファイル形式:**
 - ファイル名: `{probe_id}_{残基名}_profile.dx.gz`
@@ -46,7 +45,6 @@
 2. プロファイルスコア計算（新規機能、オプション）
    ├─ 各パターンの置換後タンパク質構造を評価
    ├─ Cβ原子位置でプロファイル値を3D補間
-   ├─ 距離重み付け（gamma > 0の場合）
    └─ 対数スケールでスコア統合
 
 3. 結果の整理と出力
@@ -112,8 +110,7 @@ results = integrated_substructure_replacement(
     to_file="data/sample_probes/E24",
     output_dir="output/integrated/",
     profile_dir="data/profiles/",  # プロファイル計算を有効化
-    probe_id="E24",                # 必須（profile_dir指定時）
-    gamma=0.0                      # 距離重み付けなし
+    probe_id="E24"                 # 必須（profile_dir指定時）
 )
 
 # 結果はスコアで降順ソート済み
@@ -143,7 +140,6 @@ python scripts/integrated_replacement.py \
     --output output/integrated/ \
     --profile-dir data/profiles/ \
     --probe-id E24 \
-    --gamma 0.0 \
     --verbose
 ```
 
@@ -165,7 +161,7 @@ rot, tran = calculate_transformation(from_mol, to_mol, atom_pairs[0])
 # プロファイルスコアの個別計算
 score = calculate_profile_score(
     protein, probe_center,
-    "data/profiles/", "E24", gamma=0.0
+    "data/profiles/", "E24"
 )
 ```
 
@@ -186,7 +182,6 @@ results = integrated_substructure_replacement(
 
 - `profile_dir`が`None`の場合、スコア計算をスキップ
 - `profile_dir`指定時は`probe_id`が必須
-- `gamma`はデフォルト0.0（重み付けなし）
 
 ### 3. エラーハンドリング
 
@@ -213,20 +208,16 @@ if not cb_atoms:
 3. 各Cβ原子について：
    - 残基タイプに対応するプロファイルを選択
    - Cβ座標でプロファイル値を3D線形補間
-   - プローブ中心からの距離を計算
-   - 距離重み付け: `w = exp(-gamma * d^2)`
-   - 重み付き対数スコアを累積: `score += log(value) * w`
+   - 対数スコアを累積: `score += log(value)`
 
 **数式:**
 
 ```
-score = Σ log(profile_value_i) * exp(-gamma * d_i^2)
+score = Σ log(profile_value_i)
 ```
 
 ここで：
 - `profile_value_i`: i番目のCβ原子位置でのプロファイル値（3D補間）
-- `d_i`: i番目のCβ原子とプローブ中心の距離
-- `gamma`: 距離重み付けパラメータ（0.0で重み付けなし）
 
 詳細は[`architecture.md`](architecture.md)を参照してください。
 

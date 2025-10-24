@@ -7,7 +7,6 @@
 主要な機能:
 - 相互作用プロファイルの読み込み
 - Cβ原子位置でのプロファイル値の3D補間
-- 距離に基づく重み付け（オプション）
 - 対数スケールでのスコア統合
 
 使用例:
@@ -19,7 +18,7 @@
     >>> probe_center = np.array([10.0, 15.0, 20.0])
     >>> score = calculate_profile_score(
     ...     protein, probe_center,
-    ...     "data/profiles/", "E24", gamma=0.0
+    ...     "data/profiles/", "E24"
     ... )
     >>> print(f"スコア: {score:.2f}")
 """
@@ -36,14 +35,13 @@ def calculate_profile_score(
     protein: Structure,
     probe_center: npt.NDArray[np.float64],
     profile_dir: str,
-    probe_id: str,
-    gamma: float = 0.0
+    probe_id: str
 ) -> float:
     """
     タンパク質構造とプローブ中心からマッチングスコアを計算します。
     
     各残基のCβ原子位置での相互作用プロファイル値を3D補間により取得し、
-    プローブ中心からの距離で重み付けして統合スコアを算出します。
+    統合スコアを算出します。
     
     Parameters
     ----------
@@ -56,11 +54,6 @@ def calculate_profile_score(
     probe_id : str
         プローブID（ファイル名プレフィックス、例: "E24"）
         プロファイルファイル名: {probe_id}_{残基名}_profile.dx.gz
-    gamma : float, default=0.0
-        距離重み付けパラメータ
-        - 0.0: 重み付けなし（全残基を均等に扱う）
-        - 0.003: 距離に基づく重み付け（ガウシアン減衰）
-        値が大きいほど、プローブ中心に近い残基の寄与が大きくなります
     
     Returns
     -------
@@ -79,7 +72,6 @@ def calculate_profile_score(
     - GLY残基はCβ原子を持たないため、自動的にスキップされます
     - 各原子位置でのプロファイル値は3D線形補間により取得されます
     - 補間値が負の場合、プロファイルの最小値で置き換えられます
-    - 距離重み付けはガウシアン関数で計算されます: exp(-gamma * distance^2)
     
     Examples
     --------
@@ -92,20 +84,13 @@ def calculate_profile_score(
     >>> 
     >>> # プローブ中心座標（例）
     >>> probe_center = np.array([10.0, 15.0, 20.0])
-    >>> 
-    >>> # スコア計算（重み付けなし）
+    >>>
+    >>> # スコア計算
     >>> score = calculate_profile_score(
     ...     protein, probe_center,
-    ...     "data/profiles/", "E24", gamma=0.0
+    ...     "data/profiles/", "E24"
     ... )
     >>> print(f"スコア: {score:.2f}")
-    
-    >>> # スコア計算（距離重み付けあり）
-    >>> score_weighted = calculate_profile_score(
-    ...     protein, probe_center,
-    ...     "data/profiles/", "E24", gamma=0.003
-    ... )
-    >>> print(f"重み付きスコア: {score_weighted:.2f}")
     """
     # プロファイルディレクトリのパスオブジェクトを作成
     profile_path = Path(profile_dir)
@@ -147,12 +132,8 @@ def calculate_profile_score(
         if resname not in profile_residues:
             continue
         
-        # 原子座標とプローブ中心からの距離を計算
+        # 原子座標を取得
         coord = atom.get_coord()
-        distance = np.linalg.norm(probe_center - coord)
-        
-        # 距離重み付けを計算（ガウシアン関数）
-        weight = np.exp(-gamma * (distance ** 2))
         
         # 3D補間でプロファイル値を取得
         # interpolatedメソッドは各座標をリストで渡す必要がある
@@ -168,7 +149,7 @@ def calculate_profile_score(
         # さらに安全のため、非常に小さい値の場合は最小値を使用
         profile_value = max(profile_value, profiles[resname].grid.min())
         
-        # 対数スケールで重み付きスコアを累積
-        log_score += np.log(profile_value) * weight
+        # 対数スケールでスコアを累積
+        log_score += np.log(profile_value)
     
     return log_score

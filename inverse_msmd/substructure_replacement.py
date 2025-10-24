@@ -533,7 +533,6 @@ def integrated_substructure_replacement(
     match_index: Optional[int] = None,
     profile_dir: Optional[str] = None,
     probe_id: Optional[str] = None,
-    gamma: float = 0.0,
     csv_output: Optional[str] = None
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
@@ -568,10 +567,6 @@ def integrated_substructure_replacement(
         プローブID（例: "E24"）
         profile_dirが指定されている場合は必須
         プロファイルファイル名: {probe_id}_{残基名}_profile.dx.gz
-    gamma : float, default=0.0
-        距離重み付けパラメータ
-        - 0.0: 重み付けなし（全残基を均等に扱う）
-        - 0.003: 距離に基づく重み付け（ガウシアン減衰）
     csv_output : Optional[str], default=None
         CSV出力ファイルのパス
         指定した場合、結果をCSVファイルとして保存します
@@ -847,8 +842,7 @@ def integrated_substructure_replacement(
                     transformed_protein,
                     transformed_center,
                     profile_dir,
-                    probe_id,
-                    gamma
+                    probe_id
                 )
                 result['score'] = score
                 print(f"  ✓ スコア: {score:.2f}")

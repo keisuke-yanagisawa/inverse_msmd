@@ -63,8 +63,7 @@ class TestProfileScoreCalculation:
             sample_protein,
             sample_probe_center,
             profile_dir,
-            "E24",
-            gamma=0.0
+            "E24"
         )
         
         assert isinstance(score, float)
@@ -72,35 +71,6 @@ class TestProfileScoreCalculation:
         assert not np.isinf(score)
         # 対数スコアは通常負の値
         assert score < 0
-    
-    def test_calculate_score_with_weight(self, sample_protein, sample_probe_center):
-        """距離重み付けありでスコアが計算される"""
-        from inverse_msmd.profile_scoring import calculate_profile_score
-        
-        profile_dir = "data/profiles/"
-        if not Path(profile_dir).exists():
-            pytest.skip(f"プロファイルディレクトリが見つかりません: {profile_dir}")
-        
-        score_weighted = calculate_profile_score(
-            sample_protein,
-            sample_probe_center,
-            profile_dir,
-            "E24",
-            gamma=0.003
-        )
-        
-        score_no_weight = calculate_profile_score(
-            sample_protein,
-            sample_probe_center,
-            profile_dir,
-            "E24",
-            gamma=0.0
-        )
-        
-        assert isinstance(score_weighted, float)
-        assert isinstance(score_no_weight, float)
-        # gamma値が異なればスコアも異なるはず
-        assert score_weighted != score_no_weight
     
     def test_different_probes(self, sample_protein, sample_probe_center):
         """異なるプローブでスコアが異なる"""
@@ -115,16 +85,14 @@ class TestProfileScoreCalculation:
             sample_protein,
             sample_probe_center,
             profile_dir,
-            "E24",
-            gamma=0.0
+            "E24"
         )
         
         score_a08 = calculate_profile_score(
             sample_protein,
             sample_probe_center,
             profile_dir,
-            "A08",
-            gamma=0.0
+            "A08"
         )
         
         # 異なるプローブでは通常スコアが異なる
@@ -247,8 +215,7 @@ class TestProfileScoringEdgeCases:
             protein,
             probe_center,
             profile_dir,
-            "E24",
-            gamma=0.0
+            "E24"
         )
         
         # 負の値が適切に処理され、NaNやInfにならないことを確認
