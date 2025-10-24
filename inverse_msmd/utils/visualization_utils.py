@@ -257,6 +257,7 @@ def draw_molecule_with_highlights(
         highlightAtoms=highlight_atoms
     )
     
+    return img
 
 
 def draw_scored_molecules_grid(
@@ -423,4 +424,3 @@ def draw_scored_molecules_grid(
     plt.tight_layout()
     plt.savefig(output_path, dpi=dpi, bbox_inches='tight')
     plt.close()
-    return img
