@@ -25,7 +25,9 @@
 - biopython >= 1.79
 - scikit-learn >= 0.24.0
 - scipy >= 1.7.0
-- gridData >= 0.6.0
+- GridDataFormats >= 0.6.0
+- libcoffee >= 0.4.3
+- matplotlib >= 3.10.1
 - rdkit（原子マッチング機能を使用する場合）
 
 ### インストール方法
@@ -37,15 +39,18 @@
 git clone https://github.com/akiyamalab/inverse_msmd.git
 cd inverse_msmd
 
-# 開発モードでインストール
-pip install -e .
+# 開発モードでインストール（開発用依存関係も含む）
+pip install -e .[dev]
 ```
 
 #### 通常インストール
 
 ```bash
-pip install -r requirements.txt
+# 基本的な依存関係のみ
 pip install .
+
+# または、開発用依存関係も含めてインストール
+pip install .[dev]
 ```
 
 ## 使い方
@@ -207,10 +212,9 @@ PDB.save(protein, "aligned_protein.pdb")
 
 ```
 inverse_msmd/
-├── pyproject.toml          # パッケージ設定
+├── pyproject.toml          # パッケージ設定（依存関係を含む）
 ├── README.md               # このファイル
 ├── LICENSE                 # ライセンスファイル
-├── requirements.txt        # 依存関係リスト
 ├── inverse_msmd/           # メインパッケージ
 │   ├── __init__.py        # パブリックAPI
 │   ├── alignment.py       # アライメント機能
@@ -498,18 +502,14 @@ RDKitは`pip`ではなく`conda`を使用することを推奨します：
 conda install -c conda-forge rdkit
 ```
 
-### gridDataが見つからない
-
-```bash
-pip install gridData
-```
-
 ### ImportError: No module named 'inverse_msmd'
 
 パッケージが正しくインストールされているか確認してください：
 
 ```bash
 pip install -e .
+# または開発用依存関係も含めて
+pip install -e .[dev]
 ```
 
 ### ファイルが見つからない

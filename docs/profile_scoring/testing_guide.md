@@ -32,8 +32,7 @@
 source venv/bin/activate
 
 # 依存関係のインストール
-pip install -r requirements.txt
-pip install pytest pytest-cov
+pip install -e .[dev]
 
 # テストディレクトリの準備
 mkdir -p test_output
