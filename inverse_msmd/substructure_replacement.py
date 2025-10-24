@@ -710,7 +710,9 @@ def integrated_substructure_replacement(
     match_index: Optional[int] = None,
     profile_dir: Optional[str] = None,
     probe_id: Optional[str] = None,
-    csv_output: Optional[str] = None
+    csv_output: Optional[str] = None,
+    image_output: Optional[str] = None,
+    deduplicate_by_smiles: bool = False
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
@@ -753,6 +755,17 @@ def integrated_substructure_replacement(
         - ligand_smiles: 置換後のリガンドのSMILES表記
         - ligand_file: 出力されたリガンドSDFファイルパス
         - protein_file: 出力されたタンパク質PDBファイルパス
+    image_output : Optional[str], default=None
+        画像出力ファイルのパス
+        指定した場合、全パターンの置換後リガンドとスコアを
+        グリッド形式で可視化した画像（PNG）を保存します
+        スコアが計算されている場合のみ有効
+        2D構造は自動的にアライメントされ、向きが統一されます
+    deduplicate_by_smiles : bool, default=False
+        SMILES表記が同じリガンドの重複を除去するかどうか
+        Trueの場合、同じSMILES構造を持つパターンの中で
+        最高スコア（最も正の値が大きい）のものだけを保持します
+        スコア計算が有効な場合のみ機能します
     
     Returns
     -------
@@ -1037,6 +1050,25 @@ def integrated_substructure_replacement(
             results_with_score.sort(key=lambda x: x['score'], reverse=True)
             print(f"\n✓ 結果をスコアで降順ソートしました")
             results = results_with_score
+            
+            # SMILES重複除去（オプション）
+            if deduplicate_by_smiles:
+                print(f"\nSMILES重複除去を実行中...")
+                seen_smiles = {}
+                unique_results = []
+                
+                for result in results:
+                    smiles = result.get('ligand_smiles', '')
+                    if smiles not in seen_smiles:
+                        # 初めて見るSMILES - 保持
+                        seen_smiles[smiles] = result
+                        unique_results.append(result)
+                    # else: すでに見たSMILES - より高スコアのものが既に追加されているのでスキップ
+                
+                removed_count = len(results) - len(unique_results)
+                results = unique_results
+                print(f"  ✓ {removed_count} パターンを重複として除去しました")
+                print(f"  ✓ 残り {len(results)} パターン（ユニークなSMILES）")
     
     # CSV出力（オプション）
     if csv_output and results:
@@ -1060,6 +1092,46 @@ def integrated_substructure_replacement(
                 writer.writerow(row)
         
         print(f"  ✓ CSV出力: {csv_path}")
+    
+    # 画像出力（オプション）
+    if image_output and results and calculate_scores:
+        # スコアがあるパターンのみを収集
+        results_with_score = [r for r in results if 'score' in r]
+        
+        if results_with_score:
+            print(f"\n画像ファイルを生成中...")
+            from .utils.visualization_utils import draw_scored_molecules_grid
+            
+            # 各パターンの置換後リガンド分子を読み込み
+            molecules = []
+            scores = []
+            titles = []
+            
+            for result in results_with_score:
+                # SDFファイルから分子を読み込み
+                ligand_path = result['ligand_file']
+                mol = next(Chem.SDMolSupplier(ligand_path))
+                if mol is not None:
+                    molecules.append(mol)
+                    scores.append(result['score'])
+                    titles.append(f"Pattern {result['pattern_index']}")
+            
+            if molecules:
+                image_path = Path(image_output)
+                image_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                draw_scored_molecules_grid(
+                    molecules,
+                    scores,
+                    str(image_path),
+                    titles=titles,
+                    max_cols=4,
+                    align_molecules=True
+                )
+                print(f"  ✓ 画像出力: {image_path}")
+                print(f"  ✓ {len(molecules)} パターンの構造式を可視化しました")
+        else:
+            print(f"  ⚠ 警告: スコア情報がないため画像を生成できませんでした")
     
     print(f"\n完了: {len(results)} パターンの結果を生成しました")
     return results

@@ -257,4 +257,170 @@ def draw_molecule_with_highlights(
         highlightAtoms=highlight_atoms
     )
     
+
+
+def draw_scored_molecules_grid(
+    molecules: List[Chem.Mol],
+    scores: List[float],
+    output_path: Union[str, Path],
+    titles: Optional[List[str]] = None,
+    max_cols: int = 4,
+    image_size: Tuple[int, int] = (400, 400),
+    dpi: int = 150,
+    align_molecules: bool = True
+) -> None:
+    """
+    複数の分子をマッチングスコア付きでグリッド形式で描画します。
+    
+    各分子の下にスコアをキャプションとして表示し、2D構造の向きを
+    統一することができます。
+    
+    Parameters
+    ----------
+    molecules : List[Chem.Mol]
+        描画する分子のリスト
+    scores : List[float]
+        各分子のマッチングスコア
+    output_path : str or Path
+        出力PNG画像のパス
+    titles : List[str], optional
+        各分子の追加タイトル（パターン番号など）
+        Noneの場合は "Pattern N" を使用
+    max_cols : int, default=4
+        グリッドの最大列数
+    image_size : Tuple[int, int], default=(400, 400)
+        各グリッドセルのサイズ (width, height)
+    dpi : int, default=150
+        出力画像の解像度
+    align_molecules : bool, default=True
+        2D構造の向きを統一するかどうか
+        Trueの場合、最初の分子を基準に他の分子をアライメント
+    
+    Raises
+    ------
+    ValueError
+        molecules または scores が空リストの場合
+        molecules と scores の長さが異なる場合
+    
+    Examples
+    --------
+    >>> from rdkit import Chem
+    >>> molecules = [Chem.MolFromSmiles("CCO"), Chem.MolFromSmiles("CCN")]
+    >>> scores = [-123.45, -145.67]
+    >>> draw_scored_molecules_grid(
+    ...     molecules,
+    ...     scores,
+    ...     "output/scored_molecules.png",
+    ...     titles=["Pattern 0", "Pattern 1"]
+    ... )
+    
+    Notes
+    -----
+    - 自動的に2D座標を生成します
+    - align_molecules=Trueの場合、RDKitのAlignMolを使用して
+      最初の分子を基準に他の分子をアライメントします
+    - スコアは小数点以下2桁で表示されます
+    - matplotlibのバックエンドはAggに設定されます
+    """
+    # 入力検証
+    if not molecules:
+        raise ValueError("molecules リストは空にできません")
+    if not scores:
+        raise ValueError("scores リストは空にできません")
+    if len(molecules) != len(scores):
+        raise ValueError(
+            f"moleculesの数({len(molecules)})とscoresの数({len(scores)})が一致しません"
+        )
+    
+    # グリッドレイアウトを計算
+    n_mols = len(molecules)
+    n_cols = min(max_cols, n_mols)
+    n_rows = (n_mols + n_cols - 1) // n_cols
+    
+    # 2D座標を生成
+    mol_2d_list = []
+    for mol in molecules:
+        mol_2d = Chem.Mol(mol)  # コピーを作成
+        AllChem.Compute2DCoords(mol_2d)
+        mol_2d_list.append(mol_2d)
+    
+    # 分子のアライメント（オプション）
+    if align_molecules and len(mol_2d_list) > 1:
+        # 最初の分子を基準として使用
+        reference_mol = mol_2d_list[0]
+        
+        for i in range(1, len(mol_2d_list)):
+            try:
+                # MCS（最大共通部分構造）を使用してアライメント
+                from rdkit.Chem import rdFMCS
+                
+                mcs_result = rdFMCS.FindMCS(
+                    [reference_mol, mol_2d_list[i]],
+                    ringMatchesRingOnly=True,
+                    completeRingsOnly=True
+                )
+                
+                if mcs_result.numAtoms > 0:
+                    # MCSパターンを取得
+                    mcs_mol = Chem.MolFromSmarts(mcs_result.smartsString)
+                    
+                    # 各分子でMCSにマッチする原子を取得
+                    ref_match = reference_mol.GetSubstructMatch(mcs_mol)
+                    mol_match = mol_2d_list[i].GetSubstructMatch(mcs_mol)
+                    
+                    if ref_match and mol_match:
+                        # アライメントを実行
+                        from rdkit.Chem import rdMolAlign
+                        rdMolAlign.AlignMol(
+                            mol_2d_list[i],
+                            reference_mol,
+                            atomMap=list(zip(mol_match, ref_match))
+                        )
+            except Exception:
+                # アライメントに失敗した場合は元の座標を使用
+                pass
+    
+    # グリッド描画
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4.5 * n_rows))
+    if n_mols == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    
+    for i, (mol_2d, score) in enumerate(zip(mol_2d_list, scores)):
+        # 分子画像を生成
+        img = Draw.MolToImage(
+            mol_2d,
+            size=image_size
+        )
+        
+        axes[i].imshow(img)
+        axes[i].axis('off')
+        
+        # タイトルとスコアを設定
+        if titles and i < len(titles):
+            title = titles[i]
+        else:
+            title = f'Pattern {i}'
+        
+        # スコアを含むキャプションを作成
+        caption = f'{title}\nScore: {score:.2f}'
+        axes[i].set_title(caption, fontsize=12, pad=10)
+    
+    # 未使用の軸を非表示
+    for i in range(n_mols, len(axes)):
+        axes[i].axis('off')
+    
+    # 全体タイトル
+    plt.suptitle(
+        f'Replacement Results ({n_mols} pattern(s))',
+        fontsize=14,
+        y=0.98
+    )
+    
+    # 保存処理
+    output_path_obj = Path(output_path)
+    output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=dpi, bbox_inches='tight')
+    plt.close()
     return img

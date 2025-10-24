@@ -90,6 +90,26 @@ def main():
              "profile-dirが指定されている場合は必須です"
     )
     parser.add_argument(
+        "--csv-output",
+        default=None,
+        help="CSV出力ファイルのパス。"
+             "指定した場合、結果をCSVファイルとして保存します"
+    )
+    parser.add_argument(
+        "--image-output",
+        default=None,
+        help="画像出力ファイルのパス（PNG形式）。"
+             "指定した場合、全パターンの置換後リガンドとスコアを可視化した画像を生成します。"
+             "profile-dirが指定されている場合のみ有効です"
+    )
+    parser.add_argument(
+        "--deduplicate-by-smiles",
+        action="store_true",
+        help="SMILES表記が同じリガンドの重複を除去します。"
+             "同じSMILES構造を持つパターンの中で最高スコアのものだけを保持します。"
+             "profile-dirが指定されている場合のみ有効です"
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="詳細な出力を表示"
@@ -156,7 +176,12 @@ def main():
         if args.profile_dir:
             print(f"プロファイル  : {args.profile_dir}")
             print(f"プローブID    : {args.probe_id}")
-            print(f"Gamma値       : {args.gamma}")
+        if args.csv_output:
+            print(f"CSV出力       : {args.csv_output}")
+        if args.image_output:
+            print(f"画像出力      : {args.image_output}")
+        if args.deduplicate_by_smiles:
+            print(f"SMILES重複除去: 有効")
         print("=" * 70)
         print()
     
@@ -170,7 +195,10 @@ def main():
             output_dir=args.output,
             match_index=args.match_index,
             profile_dir=args.profile_dir,
-            probe_id=args.probe_id
+            probe_id=args.probe_id,
+            csv_output=args.csv_output,
+            image_output=args.image_output,
+            deduplicate_by_smiles=args.deduplicate_by_smiles
         )
         
         # 結果のサマリーを表示
