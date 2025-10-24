@@ -448,7 +448,8 @@ def process_single_job(
     probe_base_dir: str,
     profile_base_dir: str,
     output_base_dir: str,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    skip_steric_clash_check: bool = False
 ) -> JobResult:
     """
     単一ジョブを処理します。
@@ -530,6 +531,7 @@ def process_single_job(
         csv_output = str(Path(job_output_dir) / "results.csv")
         
         # 統合ワークフローを実行
+        # deduplicate_by_smiles=Trueで、異なる構造式のパターンのみを保持
         patterns = integrated_substructure_replacement(
             ligand_file=ligand_file,
             protein_file=protein_file,
@@ -539,7 +541,9 @@ def process_single_job(
             match_index=job.match_index,
             profile_dir=profile_base_dir,
             probe_id=job.to_probe,
-            csv_output=csv_output
+            csv_output=csv_output,
+            deduplicate_by_smiles=True,  # 異なるSMILESのパターンをすべて保持
+            skip_steric_clash_check=skip_steric_clash_check
         )
         
         # 結果を更新
@@ -583,14 +587,14 @@ def _process_job_wrapper(args):
     ----------
     args : tuple
         (job, ligand_file, protein_file, probe_base_dir,
-         profile_base_dir, output_base_dir) のタプル
+         profile_base_dir, output_base_dir, skip_steric_clash_check) のタプル
     
     Returns
     -------
     JobResult
         ジョブ実行結果
     """
-    job, ligand_file, protein_file, probe_base_dir, profile_base_dir, output_base_dir = args
+    job, ligand_file, protein_file, probe_base_dir, profile_base_dir, output_base_dir, skip_steric_clash_check = args
     
     # 各プロセスで独自のロガーを作成（pickle化の問題を回避）
     logger = logging.getLogger(f"batch_processing.worker.{job.job_id}")
@@ -606,7 +610,8 @@ def _process_job_wrapper(args):
         probe_base_dir,
         profile_base_dir,
         output_base_dir,
-        logger
+        logger,
+        skip_steric_clash_check
     )
 
 
@@ -620,7 +625,8 @@ def run_batch_processing(
     parallel: bool = False,
     max_workers: int = 4,
     continue_on_error: bool = True,
-    log_file: Optional[str] = None
+    log_file: Optional[str] = None,
+    skip_steric_clash_check: bool = False
 ) -> BatchResult:
     """
     バッチ処理を実行します。
@@ -723,7 +729,7 @@ def run_batch_processing(
         
         # 各ジョブの引数をタプルとして準備
         job_args = [
-            (job, ligand_file, protein_file, probe_base_dir, profile_base_dir, output_base_dir)
+            (job, ligand_file, protein_file, probe_base_dir, profile_base_dir, output_base_dir, skip_steric_clash_check)
             for job in jobs
         ]
         
@@ -783,7 +789,8 @@ def run_batch_processing(
                     probe_base_dir,
                     profile_base_dir,
                     output_base_dir,
-                    logger
+                    logger,
+                    skip_steric_clash_check
                 )
                 
                 batch_result.job_results.append(result)

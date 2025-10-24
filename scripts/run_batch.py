@@ -125,6 +125,11 @@ def parse_args():
         '--visualization-output',
         help='可視化画像の出力パス（デフォルト: <output>/batch_visualization.png）'
     )
+    optional.add_argument(
+        '--skip-steric-clash-check',
+        action='store_true',
+        help='立体障害チェックをスキップする（原子間距離が近すぎるパターンも出力）'
+    )
     
     return parser.parse_args()
 
@@ -186,6 +191,7 @@ def main():
     if args.parallel:
         print(f"最大ワーカー数: {args.max_workers}")
     print(f"エラー時の継続: {'無効' if args.no_continue_on_error else '有効'}")
+    print(f"立体障害チェック: {'スキップ' if args.skip_steric_clash_check else '有効'}")
     print()
     
     # バッチ処理を実行
@@ -200,7 +206,8 @@ def main():
             parallel=args.parallel,
             max_workers=args.max_workers,
             continue_on_error=not args.no_continue_on_error,
-            log_file=args.log_file
+            log_file=args.log_file,
+            skip_steric_clash_check=args.skip_steric_clash_check
         )
         
         # 結果のサマリーを表示
@@ -243,31 +250,54 @@ def main():
                 summary_df = pd.read_csv(output_path / 'batch_summary.csv')
                 success_df = summary_df[summary_df['status'] == 'success'].copy()
                 
+                print(f"成功したジョブ数: {len(success_df)}")
+                print(f"失敗したジョブ数: {len(summary_df[summary_df['status'] == 'failed'])}")
+                
                 if len(success_df) > 0:
-                    # スコアでソート
-                    success_df = success_df.sort_values('best_score', ascending=False)
-                    
                     molecules = []
                     scores = []
                     titles = []
                     
+                    total_patterns = 0
+                    skipped_patterns = 0
+                    
+                    # 各ジョブの全パターンを収集
                     for _, row in success_df.iterrows():
                         job_id = row['job_id']
                         job_dir = output_path / job_id
+                        results_csv = job_dir / 'results.csv'
                         
-                        # best_pattern_indexのSDFファイルを読み込み
-                        pattern_index = int(row['best_pattern_index']) if pd.notna(row['best_pattern_index']) else 0
-                        sdf_file = job_dir / f"pattern_{pattern_index}_ligand_replaced.sdf"
-                        
-                        if sdf_file.exists():
-                            suppl = Chem.SDMolSupplier(str(sdf_file))
-                            mol = next(suppl)
-                            if mol is not None:
-                                molecules.append(mol)
-                                scores.append(float(row['best_score']))
-                                titles.append(f"{job_id}")
+                        # 各ジョブのresults.csvから全パターンを読み込み
+                        if results_csv.exists():
+                            job_results_df = pd.read_csv(results_csv)
+                            total_patterns += len(job_results_df)
+                            
+                            for _, pattern_row in job_results_df.iterrows():
+                                pattern_index = int(pattern_row['pattern_index'])
+                                pattern_score = float(pattern_row['score'])
+                                sdf_file = job_dir / f"pattern_{pattern_index}_ligand_replaced.sdf"
+                                
+                                if sdf_file.exists():
+                                    suppl = Chem.SDMolSupplier(str(sdf_file))
+                                    mol = next(suppl)
+                                    if mol is not None:
+                                        molecules.append(mol)
+                                        scores.append(pattern_score)
+                                        titles.append(f"{job_id}_p{pattern_index}")
+                                    else:
+                                        skipped_patterns += 1
+                                else:
+                                    skipped_patterns += 1
+                        else:
+                            print(f"  警告: {job_id}のresults.csvが見つかりません")
                     
                     if molecules:
+                        # スコアでソート（降順）
+                        sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+                        molecules = [molecules[i] for i in sorted_indices]
+                        scores = [scores[i] for i in sorted_indices]
+                        titles = [titles[i] for i in sorted_indices]
+                        
                         # 可視化出力パス
                         viz_output = args.visualization_output or str(output_path / 'batch_visualization.png')
                         
@@ -282,6 +312,11 @@ def main():
                         )
                         
                         print(f"可視化画像を保存しました: {viz_output}")
+                        print(f"  総パターン数: {total_patterns}")
+                        print(f"  可視化されたパターン数: {len(molecules)}")
+                        print(f"  スキップされたパターン数: {skipped_patterns}")
+                        if skipped_patterns > 0:
+                            print(f"  （スキップ理由: SDFファイルが見つからない、または分子の読み込み失敗）")
                         print()
                 
             except Exception as e:

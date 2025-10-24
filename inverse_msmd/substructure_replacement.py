@@ -712,7 +712,8 @@ def integrated_substructure_replacement(
     probe_id: Optional[str] = None,
     csv_output: Optional[str] = None,
     image_output: Optional[str] = None,
-    deduplicate_by_smiles: bool = False
+    deduplicate_by_smiles: bool = False,
+    skip_steric_clash_check: bool = False
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
@@ -766,6 +767,10 @@ def integrated_substructure_replacement(
         Trueの場合、同じSMILES構造を持つパターンの中で
         最高スコア（最も正の値が大きい）のものだけを保持します
         スコア計算が有効な場合のみ機能します
+    skip_steric_clash_check : bool, default=False
+        立体障害チェックをスキップするかどうか
+        Trueの場合、原子間距離が近すぎるパターンもそのまま出力します
+        Falseの場合（デフォルト）、立体障害があるパターンは除外されます
     
     Returns
     -------
@@ -967,19 +972,22 @@ def integrated_substructure_replacement(
         print(f"  ✓ {len(replacement_map)}個の原子座標を修正しました")
         
         # 7. 立体障害チェック
-        print(f"  立体障害チェック中...")
-        is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
-        
-        if not is_valid:
-            print(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
-            for atom_i, atom_j, dist in clashes:
-                atom_i_symbol = replaced_ligand.GetAtomWithIdx(atom_i).GetSymbol()
-                atom_j_symbol = replaced_ligand.GetAtomWithIdx(atom_j).GetSymbol()
-                print(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
-            print(f"  → このパターンをスキップします")
-            continue
-        
-        print(f"  ✓ 立体障害なし")
+        if not skip_steric_clash_check:
+            print(f"  立体障害チェック中...")
+            is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
+            
+            if not is_valid:
+                print(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
+                for atom_i, atom_j, dist in clashes:
+                    atom_i_symbol = replaced_ligand.GetAtomWithIdx(atom_i).GetSymbol()
+                    atom_j_symbol = replaced_ligand.GetAtomWithIdx(atom_j).GetSymbol()
+                    print(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
+                print(f"  → このパターンをスキップします")
+                continue
+            
+            print(f"  ✓ 立体障害なし")
+        else:
+            print(f"  立体障害チェックをスキップ")
         
         # 8. タンパク質を逆変換（E24の座標系に合わせる）
         print(f"  タンパク質座標を変換中...")
