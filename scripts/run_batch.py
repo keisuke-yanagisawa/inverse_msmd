@@ -116,6 +116,15 @@ def parse_args():
         '--log-file',
         help='ログファイルのパス（指定しない場合は<output>/batch_execution.log）'
     )
+    optional.add_argument(
+        '--visualize',
+        action='store_true',
+        help='バッチ処理完了後に結果を可視化する（成功したジョブのリガンドとスコアをグリッド表示）'
+    )
+    optional.add_argument(
+        '--visualization-output',
+        help='可視化画像の出力パス（デフォルト: <output>/batch_visualization.png）'
+    )
     
     return parser.parse_args()
 
@@ -219,6 +228,67 @@ def main():
         log_file = args.log_file or str(output_path / 'batch_execution.log')
         print(f"実行ログ: {log_file}")
         print()
+        
+        # 可視化処理（オプション）
+        if args.visualize and result.num_success > 0:
+            print("=" * 70)
+            print("結果を可視化中...")
+            print("=" * 70)
+            try:
+                from inverse_msmd.utils.visualization_utils import draw_scored_molecules_grid
+                from rdkit import Chem
+                import pandas as pd
+                
+                # サマリーCSVから成功したジョブの情報を読み込み
+                summary_df = pd.read_csv(output_path / 'batch_summary.csv')
+                success_df = summary_df[summary_df['status'] == 'success'].copy()
+                
+                if len(success_df) > 0:
+                    # スコアでソート
+                    success_df = success_df.sort_values('best_score', ascending=False)
+                    
+                    molecules = []
+                    scores = []
+                    titles = []
+                    
+                    for _, row in success_df.iterrows():
+                        job_id = row['job_id']
+                        job_dir = output_path / job_id
+                        
+                        # best_pattern_indexのSDFファイルを読み込み
+                        pattern_index = int(row['best_pattern_index']) if pd.notna(row['best_pattern_index']) else 0
+                        sdf_file = job_dir / f"pattern_{pattern_index}_ligand_replaced.sdf"
+                        
+                        if sdf_file.exists():
+                            suppl = Chem.SDMolSupplier(str(sdf_file))
+                            mol = next(suppl)
+                            if mol is not None:
+                                molecules.append(mol)
+                                scores.append(float(row['best_score']))
+                                titles.append(f"{job_id}")
+                    
+                    if molecules:
+                        # 可視化出力パス
+                        viz_output = args.visualization_output or str(output_path / 'batch_visualization.png')
+                        
+                        # グリッド描画
+                        draw_scored_molecules_grid(
+                            molecules,
+                            scores,
+                            viz_output,
+                            titles=titles,
+                            max_cols=4,
+                            align_molecules=True
+                        )
+                        
+                        print(f"可視化画像を保存しました: {viz_output}")
+                        print()
+                
+            except Exception as e:
+                print(f"警告: 可視化中にエラーが発生しました: {e}")
+                print("バッチ処理は正常に完了しています。")
+                import traceback
+                traceback.print_exc()
         
         # 失敗したジョブがある場合は警告
         if result.num_failed > 0:
