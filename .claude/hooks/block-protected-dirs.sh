@@ -1,50 +1,31 @@
 #!/bin/bash
-# PreToolUse hook: block Write/Edit outside repo root or to protected directories
+# PreToolUse hook: block Write/Edit outside repo root or to date-prefixed directories
 
-REPO_ROOT="/home/4/ud02114/workspace/9999_git_repositories/inverse_msmd"
-PROTECTED_DIR="20251024_tyk2liang"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# Read JSON input from stdin
-INPUT=$(cat)
-
-# Extract file_path from tool_input
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
-
-if [ -z "$FILE_PATH" ]; then
+deny() {
+  jq -n --arg reason "$1" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: $reason
+    }
+  }'
   exit 0
-fi
+}
 
-# Resolve symlinks for comparison
+is_outside_repo() { [[ "$1" != "$RESOLVED_ROOT"/* ]]; }
+is_in_tmpdir() { [[ "$1" == /tmp/* ]]; }
+is_date_prefixed() { echo "${1#$RESOLVED_ROOT/}" | grep -qE '(^|/)[0-9]{8}_'; }
+
+FILE_PATH=$(cat | jq -r '.tool_input.file_path // empty')
+[ -z "$FILE_PATH" ] && exit 0
+
 RESOLVED_PATH=$(readlink -f "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
 RESOLVED_ROOT=$(readlink -f "$REPO_ROOT")
 
-# Allow /tmp
-if [[ "$RESOLVED_PATH" == /tmp/* ]]; then
-  exit 0
-fi
-
-# Block if outside repo root
-if [[ "$RESOLVED_PATH" != "$RESOLVED_ROOT"/* ]]; then
-  jq -n --arg reason "Blocked: $FILE_PATH is outside the repository root" '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: $reason
-    }
-  }'
-  exit 0
-fi
-
-# Block if in protected directory
-if echo "$RESOLVED_PATH" | grep -q "$PROTECTED_DIR"; then
-  jq -n --arg reason "Blocked: $FILE_PATH is in protected directory '$PROTECTED_DIR'" '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: $reason
-    }
-  }'
-  exit 0
-fi
+is_in_tmpdir "$RESOLVED_PATH" && exit 0
+is_outside_repo "$RESOLVED_PATH" && deny "Blocked: $FILE_PATH is outside the repository root"
+is_date_prefixed "$RESOLVED_PATH" && deny "Blocked: $FILE_PATH is in a date-prefixed protected directory"
 
 exit 0
