@@ -44,6 +44,10 @@ dev = [
     "flake8>=3.9",
 ]
 
+[project.scripts]
+inverse-msmd-run = "inverse_msmd.cli:run_single_main"
+inverse-msmd-batch = "inverse_msmd.cli:run_batch_main"
+
 [project.urls]
 Homepage = "https://github.com/akiyamalab/inverse_msmd"
 Repository = "https://github.com/akiyamalab/inverse_msmd"
