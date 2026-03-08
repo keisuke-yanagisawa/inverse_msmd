@@ -713,7 +713,8 @@ def integrated_substructure_replacement(
     csv_output: Optional[str] = None,
     image_output: Optional[str] = None,
     deduplicate_by_smiles: bool = False,
-    skip_steric_clash_check: bool = False
+    skip_steric_clash_check: bool = False,
+    render_figures: bool = False
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
@@ -771,6 +772,11 @@ def integrated_substructure_replacement(
         立体障害チェックをスキップするかどうか
         Trueの場合、原子間距離が近すぎるパターンもそのまま出力します
         Falseの場合（デフォルト）、立体障害があるパターンは除外されます
+    render_figures : bool, default=False
+        3D構造図（PyMOL）を自動生成するかどうか。
+        Trueの場合、各パターンの複合体図・統合図を出力ディレクトリに保存します。
+        視点はプローブ分子のPCA（compute_probe_view）で自動計算されます。
+        PyMOLがインストールされていない場合は警告を表示してスキップします。
     
     Returns
     -------
@@ -919,6 +925,7 @@ def integrated_substructure_replacement(
         ligand_mcs_indices = [selected_match[i] for i in atom_pairs[0]]
         ligand_mcs_coords = ligand_coords[ligand_mcs_indices]
         
+        # TODO: このコードが、E23, 24専用になっていないか確認
         # E24のMCS原子の座標を取得
         e24_mcs_coords = to_coords[atom_pairs[1]]
         
@@ -1141,5 +1148,66 @@ def integrated_substructure_replacement(
         else:
             print(f"  ⚠ 警告: スコア情報がないため画像を生成できませんでした")
     
+    # 3D構造図の生成（オプション）
+    if render_figures and results:
+        print(f"\n3D構造図を生成中...")
+        try:
+            from .pymol_visualization import (
+                compute_probe_view, render_complex, render_combined,
+                render_probe_with_maps, _find_profile_files
+            )
+
+            probe_pdb = f"{to_file}.pdb"
+            view = compute_probe_view(probe_pdb)
+
+            # プロファイルファイルの検索
+            profile_files = {}
+            if calculate_scores and profile_dir and probe_id:
+                profile_files = _find_profile_files(profile_dir, probe_id)
+
+            # プローブ+マップ図（1回のみ、プロファイルがある場合）
+            if profile_files:
+                panel_b = str(output_path / "probe_map.png")
+                render_probe_with_maps(
+                    probe_pdb=probe_pdb,
+                    profile_files=profile_files,
+                    output_png=panel_b,
+                    view=view,
+                )
+                print(f"  ✓ プローブ+マップ: {panel_b}")
+
+            # 各パターンの描画
+            for result in results:
+                pat_idx = result['pattern_index']
+
+                # 複合体図（タンパク質+リガンド）
+                panel_a = str(output_path / f"pattern_{pat_idx}_complex.png")
+                render_complex(
+                    protein_pdb=result['protein_file'],
+                    ligand_sdf=result['ligand_file'],
+                    output_png=panel_a,
+                    view=view,
+                )
+                print(f"  ✓ パターン {pat_idx} 複合体: {panel_a}")
+
+                # 統合図（タンパク質+リガンド+プローブ+マップ）
+                if profile_files:
+                    panel_c = str(output_path / f"pattern_{pat_idx}_combined.png")
+                    render_combined(
+                        protein_pdb=result['protein_file'],
+                        ligand_sdf=result['ligand_file'],
+                        probe_pdb=probe_pdb,
+                        profile_files=profile_files,
+                        output_png=panel_c,
+                        view=view,
+                    )
+                    print(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
+
+            print(f"  ✓ 3D描画完了")
+        except ImportError as e:
+            print(f"  ⚠ 警告: PyMOLが利用できないため3D描画をスキップします: {e}")
+        except Exception as e:
+            print(f"  ⚠ 警告: 3D描画中にエラーが発生しました: {e}")
+
     print(f"\n完了: {len(results)} パターンの結果を生成しました")
     return results

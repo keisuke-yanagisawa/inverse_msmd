@@ -626,7 +626,8 @@ def run_batch_processing(
     max_workers: int = 4,
     continue_on_error: bool = True,
     log_file: Optional[str] = None,
-    skip_steric_clash_check: bool = False
+    skip_steric_clash_check: bool = False,
+    render_figures: bool = False
 ) -> BatchResult:
     """
     バッチ処理を実行します。
@@ -849,7 +850,43 @@ def run_batch_processing(
     logger.info(f"失敗: {batch_result.num_failed}")
     logger.info(f"スキップ: {batch_result.num_skipped}")
     logger.info(f"実行時間: {batch_result.total_execution_time:.2f}秒")
-    
+
+    # 3D構造図の生成（オプション）
+    if render_figures and batch_result.num_success > 0:
+        logger.info("3D構造図を生成中...")
+        try:
+            from inverse_msmd.pymol_visualization import render_batch_results as _render_batch
+
+            # 成功したジョブを to_probe でグループ化
+            from collections import defaultdict
+            probe_groups = defaultdict(list)
+            for job_result in batch_result.job_results:
+                if job_result.status == "success":
+                    probe_groups[job_result.to_probe].append(job_result.job_id)
+
+            for to_probe, job_id_list in probe_groups.items():
+                probe_pdb = str(Path(probe_base_dir) / f"{to_probe}.pdb")
+                if not Path(probe_pdb).exists():
+                    logger.warning(f"プローブPDBが見つかりません: {probe_pdb}")
+                    continue
+
+                logger.info(
+                    f"プローブ {to_probe} のジョブ ({len(job_id_list)}件) を描画中..."
+                )
+                _render_batch(
+                    output_base_dir=output_base_dir,
+                    probe_pdb=probe_pdb,
+                    profile_dir=profile_base_dir,
+                    probe_id=to_probe,
+                    job_ids=job_id_list,
+                )
+
+            logger.info("3D描画完了")
+        except ImportError as e:
+            logger.warning(f"PyMOLが利用できないため3D描画をスキップします: {e}")
+        except Exception as e:
+            logger.warning(f"3D描画中にエラーが発生しました: {e}")
+
     return batch_result
 
 

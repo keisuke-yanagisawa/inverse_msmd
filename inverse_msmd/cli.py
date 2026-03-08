@@ -112,6 +112,11 @@ def run_single_main():
         action='store_true',
         help='立体障害チェックをスキップする'
     )
+    optional.add_argument(
+        '--render-figures',
+        action='store_true',
+        help='3D構造図（PyMOL）を自動生成する'
+    )
 
     args = parser.parse_args()
 
@@ -160,6 +165,8 @@ def run_single_main():
         print(f"プロファイルディレクトリ: {args.profile_dir}")
         print(f"プローブID          : {args.probe_id}")
     print(f"立体障害チェック    : {'スキップ' if args.skip_steric_clash_check else '有効'}")
+    if args.render_figures:
+        print(f"3D描画             : 有効")
     if args.deduplicate:
         print(f"SMILES重複除去      : 有効")
     print()
@@ -178,7 +185,8 @@ def run_single_main():
             csv_output=args.csv_output,
             image_output=args.image_output,
             deduplicate_by_smiles=args.deduplicate,
-            skip_steric_clash_check=args.skip_steric_clash_check
+            skip_steric_clash_check=args.skip_steric_clash_check,
+            render_figures=args.render_figures
         )
 
         # 結果サマリー
@@ -316,6 +324,11 @@ def run_batch_main():
         action='store_true',
         help='立体障害チェックをスキップする'
     )
+    optional.add_argument(
+        '--render-figures',
+        action='store_true',
+        help='3D構造図（PyMOL）を自動生成する（各ジョブの複合体・統合図）'
+    )
 
     args = parser.parse_args()
 
@@ -361,6 +374,8 @@ def run_batch_main():
         print(f"最大ワーカー数: {args.max_workers}")
     print(f"エラー時の継続: {'無効' if args.no_continue_on_error else '有効'}")
     print(f"立体障害チェック: {'スキップ' if args.skip_steric_clash_check else '有効'}")
+    if args.render_figures:
+        print(f"3D描画: 有効")
     print()
 
     # バッチ処理を実行
@@ -376,7 +391,8 @@ def run_batch_main():
             max_workers=args.max_workers,
             continue_on_error=not args.no_continue_on_error,
             log_file=args.log_file,
-            skip_steric_clash_check=args.skip_steric_clash_check
+            skip_steric_clash_check=args.skip_steric_clash_check,
+            render_figures=args.render_figures
         )
 
         # 結果のサマリーを表示

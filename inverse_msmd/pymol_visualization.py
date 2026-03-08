@@ -1,0 +1,646 @@
+"""
+PyMOLによる3D構造可視化モジュール
+
+バッチ処理結果に対して、タンパク質-リガンド複合体、プローブ+プロファイルマップ、
+および統合図を自動生成する機能を提供します。
+
+依存パッケージ:
+    - pymol-open-source (PyMOL headless)
+    - numpy
+
+主要関数:
+    - render_complex: タンパク質-リガンド複合体の描画
+    - render_probe_with_maps: プローブ+プロファイルマップの描画
+    - render_combined: 統合図（複合体+プローブ+マップ）の描画
+    - compute_probe_view: プローブ分子のPCA視点を自動計算
+    - render_batch_results: バッチ処理結果に対する一括描画
+
+使用例:
+    >>> from inverse_msmd.pymol_visualization import render_combined, compute_probe_view
+    >>>
+    >>> view = compute_probe_view("probe/A38.pdb")
+    >>> render_combined(
+    ...     protein_pdb="output/pattern_0_protein_aligned.pdb",
+    ...     ligand_sdf="output/pattern_0_ligand_replaced.sdf",
+    ...     probe_pdb="probe/A38.pdb",
+    ...     profile_files={"LEU": "profiles/A38_LEU_profile.dx.gz"},
+    ...     output_png="output/combined.png",
+    ...     view=view,
+    ... )
+"""
+
+import gzip
+import shutil
+import tempfile
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+def _ensure_pymol():
+    """PyMOLを初期化して cmd を返す（既に起動済みなら何もしない）"""
+    import pymol
+    from pymol import cmd
+    if not hasattr(pymol, '_inverse_msmd_launched'):
+        pymol.finish_launching(["pymol", "-cq"])
+        pymol._inverse_msmd_launched = True
+    return cmd
+
+
+def compute_probe_view(
+    probe_pdb: str,
+    distance: float = 50.0,
+    slab_near: float = 20.0,
+    slab_far: float = 80.0,
+    tilt_deg: float = 45.0,
+) -> Tuple[float, ...]:
+    """
+    プローブ分子の原子座標からPCA視点を自動計算します。
+
+    プローブの平面法線方向にカメラを置き、tilt_deg分だけX軸回転を加えます。
+
+    Parameters
+    ----------
+    probe_pdb : str
+        プローブのPDBファイルパス
+    distance : float
+        カメラ距離
+    slab_near : float
+        スラブ前方距離
+    slab_far : float
+        スラブ後方距離
+    tilt_deg : float
+        X軸方向の傾斜角度（度）
+
+    Returns
+    -------
+    Tuple[float, ...]
+        PyMOLの set_view に渡す18要素のタプル
+    """
+    from Bio.PDB import PDBParser
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("probe", probe_pdb)
+    coords = np.array([atom.get_vector().get_array() for atom in structure.get_atoms()])
+    centroid = coords.mean(axis=0)
+
+    # PCA
+    centered = coords - centroid
+    cov = np.cov(centered.T)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    # 固有値の大きい順にソート
+    idx = np.argsort(eigenvalues)[::-1]
+    eigenvectors = eigenvectors[:, idx]
+
+    # PC1, PC2が面内、PC3が法線
+    pc1 = eigenvectors[:, 0]
+    pc2 = eigenvectors[:, 1]
+    normal = eigenvectors[:, 2]
+
+    # 右手系を保証
+    if np.dot(np.cross(pc1, pc2), normal) < 0:
+        normal = -normal
+
+    # X軸方向に tilt_deg 回転
+    tilt_rad = np.radians(tilt_deg)
+    cos_t, sin_t = np.cos(tilt_rad), np.sin(tilt_rad)
+    rot_x = np.array([
+        [1, 0, 0],
+        [0, cos_t, -sin_t],
+        [0, sin_t, cos_t],
+    ])
+
+    # 視線行列: 行 = [right, up, -look]
+    # PC1(長軸)を右、PC2を上、法線方向から見下ろす（分子平面を正面視）
+    view_matrix = np.array([pc1, pc2, normal])
+    view_matrix = rot_x @ view_matrix
+
+    # プローブ座標系の重心（通常は原点近傍）
+    center = centroid
+
+    return (
+        view_matrix[0, 0], view_matrix[0, 1], view_matrix[0, 2],
+        view_matrix[1, 0], view_matrix[1, 1], view_matrix[1, 2],
+        view_matrix[2, 0], view_matrix[2, 1], view_matrix[2, 2],
+        0.0, 0.0, -distance,
+        center[0], center[1], center[2],
+        slab_near, slab_far, -20.0,
+    )
+
+
+def _common_settings(cmd):
+    """共通のレンダリング設定を適用"""
+    cmd.bg_color("white")
+    cmd.set("depth_cue", 1)
+    cmd.set("fog_start", 0.3)
+    cmd.set("fog", 0.8)
+    cmd.set("ray_opaque_background", 1)
+    cmd.set("ray_shadow", 0)
+    cmd.set("antialias", 2)
+
+
+def _show_protein(cmd, obj_name="prot", ligand_obj="lig"):
+    """タンパク質の表示設定"""
+    cmd.hide("everything", obj_name)
+    cmd.show("cartoon", obj_name)
+    cmd.color("palecyan", obj_name)
+    cmd.set("cartoon_transparency", 0.4, obj_name)
+
+    # リガンド周辺残基
+    cmd.select("near_lig", f"{obj_name} and byres ({ligand_obj} around 5.0)")
+    cmd.show("sticks", "near_lig")
+    cmd.color("gray70", "near_lig and elem C")
+    cmd.color("red", "near_lig and elem O")
+    cmd.color("blue", "near_lig and elem N")
+    cmd.set("stick_radius", 0.1, "near_lig")
+
+
+def _show_ligand(cmd, obj_name="lig", stick_radius=0.2, sphere_scale=0.25):
+    """リガンドの表示設定"""
+    cmd.show("sticks", obj_name)
+    cmd.color("tv_orange", f"{obj_name} and elem C")
+    cmd.color("red", f"{obj_name} and elem O")
+    cmd.color("blue", f"{obj_name} and elem N")
+    cmd.color("yellow", f"{obj_name} and elem S")
+    cmd.color("splitpea", f"{obj_name} and elem Cl")
+    cmd.set("stick_radius", stick_radius, obj_name)
+    cmd.show("spheres", obj_name)
+    cmd.set("sphere_scale", sphere_scale, obj_name)
+
+
+def _show_probe(cmd, obj_name="probe", stick_radius=0.2, sphere_scale=0.3):
+    """プローブの表示設定"""
+    cmd.show("sticks", obj_name)
+    cmd.color("tv_green", f"{obj_name} and elem C")
+    cmd.color("splitpea", f"{obj_name} and elem Cl")
+    cmd.color("red", f"{obj_name} and elem O")
+    cmd.color("blue", f"{obj_name} and elem N")
+    cmd.color("yellow", f"{obj_name} and elem S")
+    cmd.set("stick_radius", stick_radius, obj_name)
+    cmd.show("spheres", obj_name)
+    cmd.set("sphere_scale", sphere_scale, obj_name)
+
+
+def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0):
+    """
+    プロファイルマップを読み込んでisomesh表示
+
+    Parameters
+    ----------
+    profile_files : Dict[str, str]
+        {アミノ酸名: dx.gzファイルパス} の辞書
+    tmpdir : str
+        一時ファイルの展開先
+    isomesh_level : float
+        isomeshの等値面レベル
+    """
+    # アミノ酸 → 色のデフォルトマッピング
+    default_colors = {
+        "LEU": "tv_green", "PHE": "tv_yellow", "ILE": "tv_green",
+        "VAL": "tv_green", "ALA": "lightteal", "GLY": "lightteal",
+        "PRO": "lightteal", "MET": "tv_yellow", "TRP": "tv_yellow",
+        "CYS": "yellow", "SER": "salmon", "THR": "salmon",
+        "ASN": "salmon", "GLN": "salmon", "TYR": "tv_yellow",
+        "HIS": "slate", "LYS": "tv_blue", "ARG": "tv_blue",
+        "ASP": "tv_red", "GLU": "tv_red",
+    }
+
+    for aa, gz_path in profile_files.items():
+        gz_path = str(gz_path)
+        dx_path = Path(tmpdir) / f"{aa}_profile.dx"
+
+        with gzip.open(gz_path, "rb") as f_in:
+            with open(str(dx_path), "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+        obj_name = f"profile_{aa.lower()}"
+        cmd.load(str(dx_path), obj_name)
+        mesh_name = f"map_{aa.lower()}"
+        cmd.isomesh(mesh_name, obj_name, level=isomesh_level)
+        color = default_colors.get(aa.upper(), "gray50")
+        cmd.color(color, mesh_name)
+
+
+def render_complex(
+    protein_pdb: str,
+    ligand_sdf: str,
+    output_png: str,
+    view: Optional[Tuple[float, ...]] = None,
+    ray_size: Tuple[int, int] = (800, 800),
+    dpi: int = 150,
+) -> str:
+    """
+    タンパク質-リガンド複合体を描画します。
+
+    Parameters
+    ----------
+    protein_pdb : str
+        タンパク質PDBファイルパス
+    ligand_sdf : str
+        リガンドSDFファイルパス
+    output_png : str
+        出力PNG画像パス
+    view : Tuple[float, ...], optional
+        PyMOL視点（18要素タプル）。Noneの場合はリガンドにzoom
+    ray_size : Tuple[int, int]
+        レイトレーシング画像サイズ
+    dpi : int
+        出力画像のDPI
+
+    Returns
+    -------
+    str
+        出力画像のパス
+    """
+    cmd = _ensure_pymol()
+    cmd.reinitialize()
+    _common_settings(cmd)
+
+    cmd.load(protein_pdb, "prot")
+    cmd.load(ligand_sdf, "lig")
+
+    _show_protein(cmd)
+    _show_ligand(cmd)
+
+    if view is not None:
+        cmd.set_view(view)
+    else:
+        cmd.zoom("lig", 8)
+
+    Path(output_png).parent.mkdir(parents=True, exist_ok=True)
+    cmd.ray(*ray_size)
+    cmd.png(output_png, dpi=dpi)
+    logger.info(f"Saved: {output_png}")
+    return output_png
+
+
+def render_probe_with_maps(
+    probe_pdb: str,
+    profile_files: Dict[str, str],
+    output_png: str,
+    view: Optional[Tuple[float, ...]] = None,
+    isomesh_level: float = 5.0,
+    ray_size: Tuple[int, int] = (800, 800),
+    dpi: int = 150,
+) -> str:
+    """
+    プローブ+プロファイルマップを描画します。
+
+    Parameters
+    ----------
+    probe_pdb : str
+        プローブPDBファイルパス
+    profile_files : Dict[str, str]
+        {アミノ酸名: dx.gzファイルパス} の辞書
+    output_png : str
+        出力PNG画像パス
+    view : Tuple[float, ...], optional
+        PyMOL視点。Noneの場合はプローブにzoom
+    isomesh_level : float
+        isomeshの等値面レベル
+    ray_size : Tuple[int, int]
+        レイトレーシング画像サイズ
+    dpi : int
+        出力画像のDPI
+
+    Returns
+    -------
+    str
+        出力画像のパス
+    """
+    cmd = _ensure_pymol()
+    cmd.reinitialize()
+    _common_settings(cmd)
+
+    cmd.load(probe_pdb, "probe")
+    _show_probe(cmd)
+
+    tmpdir = tempfile.mkdtemp()
+    try:
+        _load_profiles(cmd, profile_files, tmpdir, isomesh_level)
+
+        if view is not None:
+            cmd.set_view(view)
+        else:
+            cmd.zoom("probe", 10)
+
+        Path(output_png).parent.mkdir(parents=True, exist_ok=True)
+        cmd.ray(*ray_size)
+        cmd.png(output_png, dpi=dpi)
+        logger.info(f"Saved: {output_png}")
+    finally:
+        shutil.rmtree(tmpdir)
+
+    return output_png
+
+
+def render_combined(
+    protein_pdb: str,
+    ligand_sdf: str,
+    probe_pdb: str,
+    profile_files: Dict[str, str],
+    output_png: str,
+    view: Optional[Tuple[float, ...]] = None,
+    isomesh_level: float = 5.0,
+    ray_size: Tuple[int, int] = (800, 800),
+    dpi: int = 150,
+) -> str:
+    """
+    統合図（タンパク質+リガンド+プローブ+プロファイルマップ）を描画します。
+
+    Parameters
+    ----------
+    protein_pdb : str
+        変換後タンパク質PDBファイルパス
+    ligand_sdf : str
+        置換後リガンドSDFファイルパス
+    probe_pdb : str
+        プローブPDBファイルパス
+    profile_files : Dict[str, str]
+        {アミノ酸名: dx.gzファイルパス} の辞書
+    output_png : str
+        出力PNG画像パス
+    view : Tuple[float, ...], optional
+        PyMOL視点。Noneの場合はプローブにzoom
+    isomesh_level : float
+        isomeshの等値面レベル
+    ray_size : Tuple[int, int]
+        レイトレーシング画像サイズ
+    dpi : int
+        出力画像のDPI
+
+    Returns
+    -------
+    str
+        出力画像のパス
+    """
+    cmd = _ensure_pymol()
+    cmd.reinitialize()
+    _common_settings(cmd)
+
+    cmd.load(protein_pdb, "prot")
+    cmd.load(ligand_sdf, "lig")
+    cmd.load(probe_pdb, "probe")
+
+    _show_protein(cmd)
+    _show_ligand(cmd, stick_radius=0.15, sphere_scale=0.2)
+    _show_probe(cmd)
+
+    tmpdir = tempfile.mkdtemp()
+    try:
+        _load_profiles(cmd, profile_files, tmpdir, isomesh_level)
+
+        if view is not None:
+            cmd.set_view(view)
+        else:
+            cmd.zoom("probe", 10)
+
+        Path(output_png).parent.mkdir(parents=True, exist_ok=True)
+        cmd.ray(*ray_size)
+        cmd.png(output_png, dpi=dpi)
+        logger.info(f"Saved: {output_png}")
+    finally:
+        shutil.rmtree(tmpdir)
+
+    return output_png
+
+
+def _find_profile_files(
+    profile_dir: str,
+    probe_id: str,
+    amino_acids: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    """
+    プロファイルディレクトリからdx.gzファイルを検索します。
+
+    Parameters
+    ----------
+    profile_dir : str
+        プロファイルディレクトリ
+    probe_id : str
+        プローブID（例: "A38"）
+    amino_acids : List[str], optional
+        描画するアミノ酸のリスト。Noneの場合は全て
+
+    Returns
+    -------
+    Dict[str, str]
+        {アミノ酸名: dx.gzファイルパス} の辞書
+    """
+    profile_path = Path(profile_dir)
+    result = {}
+
+    for gz_file in sorted(profile_path.glob(f"{probe_id}_*_profile.dx.gz")):
+        # ファイル名からアミノ酸名を抽出: A38_LEU_profile.dx.gz → LEU
+        parts = gz_file.stem.replace("_profile.dx", "").split("_")
+        if len(parts) >= 2:
+            aa = parts[1]
+            if amino_acids is None or aa in amino_acids:
+                result[aa] = str(gz_file)
+
+    return result
+
+
+def render_batch_results(
+    output_base_dir: str,
+    probe_pdb: str,
+    profile_dir: str,
+    probe_id: str,
+    profile_amino_acids: Optional[List[str]] = None,
+    view: Optional[Tuple[float, ...]] = None,
+    isomesh_level: float = 5.0,
+    ray_size: Tuple[int, int] = (800, 800),
+    dpi: int = 150,
+    job_ids: Optional[List[str]] = None,
+) -> List[Dict]:
+    """
+    バッチ処理結果に対して3パネル図を一括生成します。
+
+    各ジョブの出力ディレクトリ内に以下のファイルを生成:
+      - panel_a_complex.png (タンパク質+リガンド)
+      - panel_b_probe_map.png (プローブ+マップ) ※全ジョブ共通
+      - panel_c_combined.png (統合図)
+
+    Parameters
+    ----------
+    output_base_dir : str
+        バッチ処理の出力ベースディレクトリ
+    probe_pdb : str
+        プローブPDBファイルパス
+    profile_dir : str
+        プロファイルディレクトリパス
+    probe_id : str
+        プローブID（例: "A38"）
+    profile_amino_acids : List[str], optional
+        描画するアミノ酸のリスト（例: ["LEU", "PHE"]）。
+        Noneの場合はプロファイルディレクトリ内の全アミノ酸
+    view : Tuple[float, ...], optional
+        PyMOL視点。Noneの場合はprobe_pdbからPCAで自動計算
+    isomesh_level : float
+        isomeshの等値面レベル
+    ray_size : Tuple[int, int]
+        レイトレーシング画像サイズ
+    dpi : int
+        出力画像のDPI
+    job_ids : List[str], optional
+        描画対象のジョブIDリスト。Noneの場合は全ジョブ
+
+    Returns
+    -------
+    List[Dict]
+        各ジョブの描画結果情報のリスト
+        [{"job_id": ..., "panel_a": ..., "panel_b": ..., "panel_c": ...}, ...]
+    """
+    output_path = Path(output_base_dir)
+
+    # 視点の自動計算
+    if view is None:
+        logger.info(f"プローブ {probe_pdb} からPCA視点を計算中...")
+        view = compute_probe_view(probe_pdb)
+
+    # プロファイルファイルの検索
+    profile_files = _find_profile_files(profile_dir, probe_id, profile_amino_acids)
+    if not profile_files:
+        logger.warning(f"プロファイルファイルが見つかりません: {profile_dir}/{probe_id}_*")
+    else:
+        logger.info(f"プロファイル: {list(profile_files.keys())}")
+
+    # Panel B（プローブ+マップ）は全ジョブ共通なので1回だけ描画
+    panel_b_path = str(output_path / "panel_b_probe_map.png")
+    if profile_files:
+        render_probe_with_maps(
+            probe_pdb=probe_pdb,
+            profile_files=profile_files,
+            output_png=panel_b_path,
+            view=view,
+            isomesh_level=isomesh_level,
+            ray_size=ray_size,
+            dpi=dpi,
+        )
+    else:
+        panel_b_path = None
+
+    # ジョブディレクトリの検索
+    if job_ids is not None:
+        job_dirs = [output_path / jid for jid in job_ids]
+    else:
+        job_dirs = sorted(
+            [d for d in output_path.iterdir() if d.is_dir()],
+            key=lambda d: d.name,
+        )
+
+    results = []
+
+    for job_dir in job_dirs:
+        if not job_dir.is_dir():
+            logger.warning(f"ジョブディレクトリが見つかりません: {job_dir}")
+            continue
+
+        job_id = job_dir.name
+
+        # パターンファイルを検索（pattern_0を優先、results.csvがあればbest_scoreのパターンを使用）
+        best_pattern = _find_best_pattern(job_dir)
+        if best_pattern is None:
+            logger.warning(f"ジョブ {job_id}: パターンファイルが見つかりません")
+            continue
+
+        protein_pdb_path = str(job_dir / f"pattern_{best_pattern}_protein_aligned.pdb")
+        ligand_sdf_path = str(job_dir / f"pattern_{best_pattern}_ligand_replaced.sdf")
+
+        if not Path(protein_pdb_path).exists() or not Path(ligand_sdf_path).exists():
+            logger.warning(f"ジョブ {job_id}: pattern_{best_pattern} のファイルが不完全です")
+            continue
+
+        logger.info(f"ジョブ {job_id} (pattern {best_pattern}) を描画中...")
+
+        result_info = {"job_id": job_id, "pattern_index": best_pattern}
+
+        # Panel A: 複合体
+        panel_a = str(job_dir / "panel_a_complex.png")
+        render_complex(
+            protein_pdb=protein_pdb_path,
+            ligand_sdf=ligand_sdf_path,
+            output_png=panel_a,
+            view=view,
+            ray_size=ray_size,
+            dpi=dpi,
+        )
+        result_info["panel_a"] = panel_a
+
+        # Panel B: 共通
+        result_info["panel_b"] = panel_b_path
+
+        # Panel C: 統合
+        if profile_files:
+            panel_c = str(job_dir / "panel_c_combined.png")
+            render_combined(
+                protein_pdb=protein_pdb_path,
+                ligand_sdf=ligand_sdf_path,
+                probe_pdb=probe_pdb,
+                profile_files=profile_files,
+                output_png=panel_c,
+                view=view,
+                isomesh_level=isomesh_level,
+                ray_size=ray_size,
+                dpi=dpi,
+            )
+            result_info["panel_c"] = panel_c
+
+        results.append(result_info)
+
+    logger.info(f"描画完了: {len(results)} ジョブ")
+    return results
+
+
+def _find_best_pattern(job_dir: Path) -> Optional[int]:
+    """
+    ジョブディレクトリからベストパターンのインデックスを取得します。
+
+    results.csvがある場合は最高スコアのパターンを、
+    ない場合はpattern_0を返します。
+    """
+    import csv
+
+    results_csv = job_dir / "results.csv"
+    if results_csv.exists():
+        best_score = float("-inf")
+        best_idx = None
+        with open(results_csv, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    score = float(row["score"])
+                    idx = int(row["pattern_index"])
+                    if score > best_score:
+                        best_score = score
+                        best_idx = idx
+                except (ValueError, KeyError):
+                    continue
+        if best_idx is not None:
+            return best_idx
+
+    # results.csvがない場合、pattern_0を探す
+    if (job_dir / "pattern_0_protein_aligned.pdb").exists():
+        return 0
+
+    # 任意のパターンを探す
+    for f in sorted(job_dir.glob("pattern_*_protein_aligned.pdb")):
+        try:
+            idx = int(f.stem.split("_")[1])
+            return idx
+        except (ValueError, IndexError):
+            continue
+
+    return None
+
+
+__all__ = [
+    "compute_probe_view",
+    "render_complex",
+    "render_probe_with_maps",
+    "render_combined",
+    "render_batch_results",
+]

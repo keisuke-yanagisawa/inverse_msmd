@@ -210,3 +210,9 @@ __marimo__/
 # Project-specific
 # Uncompressed profile files (use .dx.gz instead)
 data/profiles/*.dx
+
+# working directory
+20251024_tyk2liang/
+
+# Output directory
+output/
