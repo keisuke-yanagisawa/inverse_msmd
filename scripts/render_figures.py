@@ -107,7 +107,8 @@ def main():
     # PyMOLのインポート確認
     try:
         from inverse_msmd.pymol_visualization import (
-            compute_probe_view, render_complex, render_combined,
+            compute_probe_view, compute_protein_view,
+            render_complex, render_combined,
             render_probe_with_maps, _find_profile_files,
         )
     except ImportError as e:
@@ -124,6 +125,11 @@ def main():
     )
 
     ray_size = tuple(args.ray_size)
+
+    # プローブ・マップをタンパク質空間に変換するための行列
+    # 本スクリプトではresultsデータ未ロードのためNone
+    transform_rot = None
+    transform_tran = None
 
     # プロファイルファイルの検索
     profile_files = {}
@@ -145,6 +151,8 @@ def main():
             isomesh_level=args.isomesh_level,
             ray_size=ray_size,
             dpi=args.dpi,
+            transform_rot=transform_rot,
+            transform_tran=transform_tran,
         )
         print(f"  probe_map.png")
 
@@ -156,6 +164,13 @@ def main():
         ]
     else:
         pdb_files = sorted(output_dir.glob("pattern_*_protein_aligned.pdb"))
+
+    # タンパク質固定視点（全ジョブ共通）
+    protein_view = view  # フォールバック
+    if pdb_files:
+        first_pdb = pdb_files[0]
+        if first_pdb.exists():
+            protein_view = compute_protein_view(str(first_pdb))
 
     rendered = 0
     for pdb_path in pdb_files:
@@ -174,7 +189,7 @@ def main():
             protein_pdb=str(pdb_path),
             ligand_sdf=str(sdf_path),
             output_png=str(output_dir / f"{pat}_complex.png"),
-            view=view,
+            view=protein_view,
             ray_size=ray_size,
             dpi=args.dpi,
         )
@@ -187,10 +202,12 @@ def main():
                 probe_pdb=str(probe_pdb),
                 profile_files=profile_files,
                 output_png=str(output_dir / f"{pat}_combined.png"),
-                view=view,
+                view=protein_view,
                 isomesh_level=args.isomesh_level,
                 ray_size=ray_size,
                 dpi=args.dpi,
+                transform_rot=transform_rot,
+                transform_tran=transform_tran,
             )
 
         rendered += 1

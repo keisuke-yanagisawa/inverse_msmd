@@ -909,10 +909,10 @@ def integrated_substructure_replacement(
     from_coords = from_no_h.GetConformer().GetPositions()
     to_coords = to_no_h.GetConformer().GetPositions()
     
-    # プローブ中心座標を計算（スコア計算が必要な場合）
-    to_center = None
+    # プローブ中心座標を事前計算（スコア計算が必要な場合）
+    to_center_e24 = None
     if calculate_scores:
-        to_center = to_no_h.GetConformer().GetPositions().mean(axis=0)
+        to_center_e24 = to_no_h.GetConformer().GetPositions().mean(axis=0)
     
     # 各atom matchingパターンについて処理
     results = []
@@ -935,7 +935,12 @@ def integrated_substructure_replacement(
         si = SuperImposer()
         si.fit(e24_mcs_coords, ligand_mcs_coords)  # E24をリガンドに合わせる
         rot, tran = si.rot_, si.tran_
-        
+
+        # プローブ中心をE24空間→タンパク質空間に順変換
+        if calculate_scores:
+            to_center_e24_coord = to_no_h.GetConformer().GetPositions().mean(axis=0)
+            transformed_center = np.dot(to_center_e24_coord, rot) + tran
+
         # 3. E24は変換しない（元の座標のまま使用）
         print(f"  E24を元の座標で使用...")
         import copy
@@ -950,22 +955,14 @@ def integrated_substructure_replacement(
             atom_pairs
         )
         
-        # 5. リガンドを逆変換（E24の座標系に合わせる）
-        print(f"  リガンド座標を変換中...")
-        replaced_ligand_coords = replaced_ligand.GetConformer().GetPositions()
-        # 逆変換: new_coords = rot.T @ (old_coords - tran)
-        transformed_ligand_coords = np.dot(replaced_ligand_coords - tran, rot.T)
-        
-        # 6. 置換部分の座標をプローブの元の座標でコピー（重要な修正）
+        # ステップ5-NEW: 置換部分のみ順変換（E24空間→タンパク質空間）
         print(f"  置換部分の座標を修正中...")
-        # replacement_mapは {新リガンド内インデックス: replacement_mol内インデックス}
-        # 変換後の座標をコピー
-        final_coords = transformed_ligand_coords.copy()
-        
-        # 置換部分の座標をプローブの元の座標で上書き
+        final_coords = replaced_ligand.GetConformer().GetPositions().copy()
+        # 非置換部分は既にタンパク質空間にある（変換不要）
+        # 置換部分のみE24空間→タンパク質空間に順変換
         for new_ligand_idx, replacement_idx in replacement_map.items():
-            # プローブ(E24)の元の座標を直接コピー
-            final_coords[new_ligand_idx] = to_coords[replacement_idx]
+            e24_coord = to_coords[replacement_idx]
+            final_coords[new_ligand_idx] = np.dot(e24_coord, rot) + tran
         
         # 最終座標をリガンドに設定
         replaced_ligand.RemoveAllConformers()
@@ -996,13 +993,8 @@ def integrated_substructure_replacement(
         else:
             print(f"  立体障害チェックをスキップ")
         
-        # 8. タンパク質を逆変換（E24の座標系に合わせる）
-        print(f"  タンパク質座標を変換中...")
+        # ステップ8-NEW: タンパク質は元座標のまま（変換不要）
         protein_copy = copy.deepcopy(protein)
-        protein_coords = PDB.get_attr(protein_copy, "coord")
-        # 逆変換: new_coords = rot.T @ (old_coords - tran)
-        transformed_protein_coords = np.dot(protein_coords - tran, rot.T)
-        PDB.set_attr(protein_copy, "coord", transformed_protein_coords)
         transformed_protein = protein_copy
         
         # 9. ファイルを出力
@@ -1030,16 +1022,15 @@ def integrated_substructure_replacement(
             'ligand_file': str(ligand_output),
             'protein_file': str(protein_output),
             'pattern_index': pattern_idx,
-            'ligand_smiles': ligand_smiles
+            'ligand_smiles': ligand_smiles,
+            'transform_rot': rot,    # 追加: E24→タンパク質空間の回転行列
+            'transform_tran': tran,  # 追加: E24→タンパク質空間の並進ベクトル
         }
         
         # プロファイルスコア計算（オプション）
         if calculate_scores:
             print(f"  プロファイルスコア計算中...")
             from .profile_scoring import calculate_profile_score
-            
-            # プローブ中心座標（E24は変換されていないので元の座標のまま）
-            transformed_center = to_center
             
             # スコアを計算
             try:
@@ -1200,6 +1191,8 @@ def integrated_substructure_replacement(
                         profile_files=profile_files,
                         output_png=panel_c,
                         view=view,
+                        transform_rot=result['transform_rot'],
+                        transform_tran=result['transform_tran'],
                     )
                     print(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
 

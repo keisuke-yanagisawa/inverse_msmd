@@ -131,6 +131,204 @@ def compute_probe_view(
     )
 
 
+def compute_protein_view(
+    protein_pdb: str,
+    ligand_sdf: str = None,
+    distance: float = 60.0,
+    slab_near: float = 20.0,
+    slab_far: float = 80.0,
+    tilt_deg: float = 30.0,
+) -> Tuple[float, ...]:
+    """
+    タンパク質構造の視点を計算する。
+
+    ligand_sdfが指定された場合、タンパク質中心→リガンド中心方向を視線とし、
+    ポケットを外側から覗く視点を返す。リガンド中心にカメラを向ける。
+    ligand_sdfが未指定の場合、CA原子PCAに基づく固定視点を返す。
+    """
+    from Bio.PDB import PDBParser
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("protein", protein_pdb)
+
+    # CA原子座標
+    ca_coords = []
+    for atom in structure.get_atoms():
+        if atom.get_name() == "CA":
+            ca_coords.append(atom.get_vector().get_array())
+
+    if len(ca_coords) < 3:
+        ca_coords = [atom.get_vector().get_array() for atom in structure.get_atoms()]
+
+    coords = np.array(ca_coords)
+    protein_centroid = coords.mean(axis=0)
+
+    if ligand_sdf is not None:
+        # ポケット視点: タンパク質中心→リガンド中心を視線方向にする
+        from rdkit import Chem
+        supplier = Chem.SDMolSupplier(ligand_sdf, removeHs=True)
+        lig_mol = next(supplier)
+        lig_coords = lig_mol.GetConformer().GetPositions()
+        lig_centroid = lig_coords.mean(axis=0)
+
+        # 視線方向: タンパク質中心→リガンド中心（カメラはこの逆方向に置かれる）
+        look = lig_centroid - protein_centroid
+        look = look / np.linalg.norm(look)
+
+        # up方向: PCA第2主軸をベースにGram-Schmidt直交化
+        centered = coords - protein_centroid
+        cov = np.cov(centered.T)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvectors = eigenvectors[:, idx]
+
+        # PCA符号安定化
+        for i in range(3):
+            max_abs_idx = np.argmax(np.abs(eigenvectors[:, i]))
+            if eigenvectors[max_abs_idx, i] < 0:
+                eigenvectors[:, i] = -eigenvectors[:, i]
+
+        up_candidate = eigenvectors[:, 1]  # PC2をup候補に
+        # lookと直交化
+        up = up_candidate - np.dot(up_candidate, look) * look
+        up = up / np.linalg.norm(up)
+
+        right = np.cross(look, up)
+        right = right / np.linalg.norm(right)
+
+        # PyMOL view matrix: 行 = [right, up, -look]
+        view_matrix = np.array([right, up, -look])
+
+        center = lig_centroid
+    else:
+        # PCAベースの視点（従来動作）
+        centered = coords - protein_centroid
+        cov = np.cov(centered.T)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvectors = eigenvectors[:, idx]
+
+        for i in range(3):
+            max_abs_idx = np.argmax(np.abs(eigenvectors[:, i]))
+            if eigenvectors[max_abs_idx, i] < 0:
+                eigenvectors[:, i] = -eigenvectors[:, i]
+
+        pc1 = eigenvectors[:, 0]
+        pc2 = eigenvectors[:, 1]
+        normal = eigenvectors[:, 2]
+
+        if np.dot(np.cross(pc1, pc2), normal) < 0:
+            normal = -normal
+
+        tilt_rad = np.radians(tilt_deg)
+        cos_t, sin_t = np.cos(tilt_rad), np.sin(tilt_rad)
+        rot_x = np.array([
+            [1, 0, 0],
+            [0, cos_t, -sin_t],
+            [0, sin_t, cos_t],
+        ])
+
+        view_matrix = np.array([pc1, pc2, normal])
+        view_matrix = rot_x @ view_matrix
+
+        center = protein_centroid
+
+    return (
+        view_matrix[0, 0], view_matrix[0, 1], view_matrix[0, 2],
+        view_matrix[1, 0], view_matrix[1, 1], view_matrix[1, 2],
+        view_matrix[2, 0], view_matrix[2, 1], view_matrix[2, 2],
+        0.0, 0.0, -distance,
+        center[0], center[1], center[2],
+        slab_near, slab_far, -20.0,
+    )
+
+
+def _build_pymol_transform(rot, tran):
+    """
+    SuperImposerのrot, tranからPyMOL用4x4変換行列を生成。
+
+    SuperImposerの順変換: y = x @ rot + tran （行ベクトル規約）
+    PyMOLのtransform_object: p' = M @ p （列ベクトル規約）
+
+    変換: M = [[rot^T, tran^T], [0, 0, 0, 1]]
+    """
+    R = rot.T  # 行ベクトル → 列ベクトル規約変換
+    return [
+        R[0, 0], R[0, 1], R[0, 2], float(tran[0]),
+        R[1, 0], R[1, 1], R[1, 2], float(tran[1]),
+        R[2, 0], R[2, 1], R[2, 2], float(tran[2]),
+        0.0,     0.0,     0.0,     1.0,
+    ]
+
+
+def _resample_dx_file(dx_path_in, dx_path_out, rot, tran):
+    """
+    DXファイルのボリュームデータをタンパク質空間に再サンプリングする。
+
+    PyMOLのDXリーダーは軸整列直交グリッドのみ対応するため、
+    delta vectorsの回転では正しく読み込めない。
+    代わりに、新しい軸整列グリッドを作成し、各グリッド点について
+    逆変換でプローブ空間の座標を求め、元データから補間する。
+
+    Parameters
+    ----------
+    dx_path_in : str
+        入力DXファイルパス（プローブ空間）
+    dx_path_out : str
+        出力DXファイルパス（タンパク質空間、軸整列）
+    rot : np.ndarray (3,3)
+        行ベクトル規約の回転行列: y = x @ rot + tran
+    tran : np.ndarray (3,)
+        並進ベクトル
+    """
+    from scipy.ndimage import map_coordinates
+    from gridData import Grid
+
+    g = Grid(dx_path_in)
+    data = g.grid  # (nx, ny, nz)
+    origin = np.array(g.origin, dtype=np.float64)
+    delta = float(g.delta[0])  # isotropic spacing assumed
+    shape = np.array(data.shape)
+
+    # プローブ空間の8頂点をタンパク質空間に変換し、バウンディングボックスを求める
+    corners_probe = np.array([
+        origin + np.array([i * (shape[0] - 1), j * (shape[1] - 1), k * (shape[2] - 1)]) * delta
+        for i in (0, 1) for j in (0, 1) for k in (0, 1)
+    ])
+    corners_protein = corners_probe @ rot + tran
+
+    new_origin = corners_protein.min(axis=0) - delta  # 1グリッド分のマージン
+    new_end = corners_protein.max(axis=0) + delta
+    new_shape = np.ceil((new_end - new_origin) / delta).astype(int) + 1
+
+    # 新しい軸整列グリッドの各点座標（タンパク質空間）
+    xi = np.arange(new_shape[0]) * delta + new_origin[0]
+    yi = np.arange(new_shape[1]) * delta + new_origin[1]
+    zi = np.arange(new_shape[2]) * delta + new_origin[2]
+    gx, gy, gz = np.meshgrid(xi, yi, zi, indexing='ij')
+    protein_coords = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=1)
+
+    # タンパク質空間 → プローブ空間への逆変換: x = (y - tran) @ rot^T
+    probe_coords = (protein_coords - tran) @ rot.T
+
+    # プローブ空間でのグリッドインデックス（連続値）
+    grid_indices = (probe_coords - origin) / delta
+
+    # scipy map_coordinates で補間（範囲外は0）
+    resampled = map_coordinates(
+        data,
+        grid_indices.T,  # (3, N)
+        order=0,  # nearest neighbor interpolation
+        mode='constant',
+        cval=0.0,
+    )
+    new_data = resampled.reshape(new_shape)
+
+    # 新しいDXファイルを書き出し
+    new_grid = Grid(new_data, origin=new_origin,
+                    delta=np.array([delta, delta, delta]))
+    new_grid.export(dx_path_out, file_format="DX")
+
+
 def _common_settings(cmd):
     """共通のレンダリング設定を適用"""
     cmd.bg_color("white")
@@ -184,7 +382,8 @@ def _show_probe(cmd, obj_name="probe", stick_radius=0.2, sphere_scale=0.3):
     cmd.set("sphere_scale", sphere_scale, obj_name)
 
 
-def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0):
+def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0,
+                   transform_rot=None, transform_tran=None):
     """
     プロファイルマップを読み込んでisomesh表示
 
@@ -196,6 +395,10 @@ def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0):
         一時ファイルの展開先
     isomesh_level : float
         isomeshの等値面レベル
+    transform_rot : np.ndarray (3,3), optional
+        行ベクトル規約の回転行列。指定時にDX座標系を変換。
+    transform_tran : np.ndarray (3,), optional
+        並進ベクトル
     """
     # アミノ酸 → 色のデフォルトマッピング
     default_colors = {
@@ -216,8 +419,20 @@ def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0):
             with open(str(dx_path), "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
+        # DXデータをタンパク質空間に再サンプリング（指定時）
+        if transform_rot is not None:
+            dx_transformed = Path(tmpdir) / f"{aa}_profile_transformed.dx"
+            _resample_dx_file(str(dx_path), str(dx_transformed), transform_rot, transform_tran)
+            dx_path = dx_transformed
+
         obj_name = f"profile_{aa.lower()}"
         cmd.load(str(dx_path), obj_name)
+
+        # PyMOL fails to create map objects from DX files containing inf values
+        if obj_name not in cmd.get_names("objects"):
+            logger.warning(f"プロファイル {aa} の読み込みに失敗（データにinfが含まれている可能性）、スキップ")
+            continue
+
         mesh_name = f"map_{aa.lower()}"
         cmd.isomesh(mesh_name, obj_name, level=isomesh_level)
         color = default_colors.get(aa.upper(), "gray50")
@@ -285,6 +500,8 @@ def render_probe_with_maps(
     isomesh_level: float = 5.0,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
+    transform_rot=None,
+    transform_tran=None,
 ) -> str:
     """
     プローブ+プロファイルマップを描画します。
@@ -320,7 +537,13 @@ def render_probe_with_maps(
 
     tmpdir = tempfile.mkdtemp()
     try:
-        _load_profiles(cmd, profile_files, tmpdir, isomesh_level)
+        _load_profiles(cmd, profile_files, tmpdir, isomesh_level,
+                       transform_rot=transform_rot, transform_tran=transform_tran)
+
+        # プローブをタンパク質空間に変換（DXは_load_profiles内で変換済み）
+        if transform_rot is not None:
+            transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
+            cmd.transform_object("probe", transform_matrix)
 
         if view is not None:
             cmd.set_view(view)
@@ -347,6 +570,8 @@ def render_combined(
     isomesh_level: float = 5.0,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
+    transform_rot=None,
+    transform_tran=None,
 ) -> str:
     """
     統合図（タンパク質+リガンド+プローブ+プロファイルマップ）を描画します。
@@ -391,7 +616,13 @@ def render_combined(
 
     tmpdir = tempfile.mkdtemp()
     try:
-        _load_profiles(cmd, profile_files, tmpdir, isomesh_level)
+        _load_profiles(cmd, profile_files, tmpdir, isomesh_level,
+                       transform_rot=transform_rot, transform_tran=transform_tran)
+
+        # プローブをタンパク質空間に変換（DXは_load_profiles内で変換済み）
+        if transform_rot is not None:
+            transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
+            cmd.transform_object("probe", transform_matrix)
 
         if view is not None:
             cmd.set_view(view)
@@ -451,10 +682,13 @@ def render_batch_results(
     probe_id: str,
     profile_amino_acids: Optional[List[str]] = None,
     view: Optional[Tuple[float, ...]] = None,
+    protein_view: Optional[Tuple[float, ...]] = None,
     isomesh_level: float = 5.0,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     job_ids: Optional[List[str]] = None,
+    transform_rot=None,
+    transform_tran=None,
 ) -> List[Dict]:
     """
     バッチ処理結果に対して3パネル図を一括生成します。
@@ -501,6 +735,29 @@ def render_batch_results(
         logger.info(f"プローブ {probe_pdb} からPCA視点を計算中...")
         view = compute_probe_view(probe_pdb)
 
+    # ジョブディレクトリの検索（protein_view計算のために先に確定させる）
+    if job_ids is not None:
+        job_dirs = [Path(output_base_dir) / jid for jid in job_ids]
+    else:
+        job_dirs = sorted(
+            [d for d in Path(output_base_dir).iterdir() if d.is_dir()],
+            key=lambda d: d.name,
+        )
+
+    if protein_view is None:
+        # 最初のジョブのタンパク質PDBを探す（job_dirsの最初の要素を参照）
+        import glob
+        first_job_dir = job_dirs[0] if job_dirs else None
+        if first_job_dir:
+            protein_candidates = (
+                list(Path(first_job_dir).glob("*protein_aligned.pdb")) +
+                list(Path(first_job_dir).glob("*protein.pdb"))
+            )
+            if protein_candidates:
+                protein_view = compute_protein_view(str(protein_candidates[0]))
+        if protein_view is None:
+            protein_view = view  # フォールバック
+
     # プロファイルファイルの検索
     profile_files = _find_profile_files(profile_dir, probe_id, profile_amino_acids)
     if not profile_files:
@@ -519,18 +776,11 @@ def render_batch_results(
             isomesh_level=isomesh_level,
             ray_size=ray_size,
             dpi=dpi,
+            transform_rot=transform_rot,
+            transform_tran=transform_tran,
         )
     else:
         panel_b_path = None
-
-    # ジョブディレクトリの検索
-    if job_ids is not None:
-        job_dirs = [output_path / jid for jid in job_ids]
-    else:
-        job_dirs = sorted(
-            [d for d in output_path.iterdir() if d.is_dir()],
-            key=lambda d: d.name,
-        )
 
     results = []
 
@@ -564,7 +814,7 @@ def render_batch_results(
             protein_pdb=protein_pdb_path,
             ligand_sdf=ligand_sdf_path,
             output_png=panel_a,
-            view=view,
+            view=protein_view,
             ray_size=ray_size,
             dpi=dpi,
         )
@@ -582,10 +832,12 @@ def render_batch_results(
                 probe_pdb=probe_pdb,
                 profile_files=profile_files,
                 output_png=panel_c,
-                view=view,
+                view=protein_view,
                 isomesh_level=isomesh_level,
                 ray_size=ray_size,
                 dpi=dpi,
+                transform_rot=transform_rot,
+                transform_tran=transform_tran,
             )
             result_info["panel_c"] = panel_c
 

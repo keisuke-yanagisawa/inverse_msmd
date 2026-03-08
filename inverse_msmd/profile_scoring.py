@@ -35,7 +35,9 @@ def calculate_profile_score(
     protein: Structure,
     probe_center: npt.NDArray[np.float64],
     profile_dir: str,
-    probe_id: str
+    probe_id: str,
+    inverse_rot: npt.NDArray[np.float64] = None,
+    inverse_tran: npt.NDArray[np.float64] = None,
 ) -> float:
     """
     タンパク質構造とプローブ中心からマッチングスコアを計算します。
@@ -134,7 +136,10 @@ def calculate_profile_score(
         
         # 原子座標を取得
         coord = atom.get_coord()
-        
+        # 案B: タンパク質空間 → プローブ空間に逆変換してからサンプリング
+        if inverse_rot is not None:
+            coord = np.dot(coord - inverse_tran, inverse_rot.T)
+
         # 3D補間でプロファイル値を取得
         # interpolatedメソッドは各座標をリストで渡す必要がある
         profile_value = profiles[resname].interpolated(

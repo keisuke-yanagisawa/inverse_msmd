@@ -219,24 +219,14 @@ class TestIntegratedWorkflow:
     @pytest.mark.integration
     def test_replacement_coordinates_accuracy(self, output_dir):
         """
-        置換部分の座標がプローブの元の座標と一致することを確認
-        
-        これは重要なバグ検出テストです：
-        - 以前のバグ: 置換部分の座標が変換されて不適切な位置になっていた
-        - 修正後: 置換部分の座標はプローブの元の座標でコピーされる
+        置換部分の座標がタンパク質空間内で妥当な位置にあることを確認
+
+        案B（タンパク質固定方式）では、置換部分の座標はE24空間から
+        タンパク質空間に順変換（rot @ coord + tran）される。
+        変換後の座標がタンパク質の近傍に正しく配置されていることを検証する。
         """
-        from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
-        
         test_output = output_dir / "coordinate_accuracy_test"
-        
-        # プローブ(E24)を読み込んで元の座標を取得
-        e24_mol = read_mol_from_pdb_smi(
-            "data/sample_probes/E24.pdb",
-            "data/sample_probes/E24.smi"
-        )
-        e24_no_h = Chem.RemoveHs(e24_mol)
-        e24_original_coords = e24_no_h.GetConformer().GetPositions()
-        
+
         # 統合ワークフローを実行
         results = integrated_substructure_replacement(
             ligand_file="data/atom_matching/4hw3_A_lig.sdf",
@@ -246,38 +236,37 @@ class TestIntegratedWorkflow:
             output_dir=str(test_output),
             match_index=0
         )
-        
+
         assert len(results) > 0, "結果が生成されていません"
-        
-        # 最初のパターンで座標の正確性をチェック
+
         first_result = results[0]
         ligand_path = Path(first_result['ligand_file'])
-        
+        protein_path = Path(first_result['protein_file'])
+
         # 置換後のリガンドを読み込む
         replaced_ligand = next(Chem.SDMolSupplier(str(ligand_path)))
         assert replaced_ligand is not None, "リガンドの読み込みに失敗しました"
-        
+
         replaced_no_h = Chem.RemoveHs(replaced_ligand)
         replaced_coords = replaced_no_h.GetConformer().GetPositions()
-        
-        # E24の原子のどれかがリガンド内に見つかることを確認
-        # （置換部分の座標がE24の元の座標と一致するかチェック）
-        found_matching_coords = False
-        tolerance = 0.01  # 座標の許容誤差（Å）
-        
-        for e24_coord in e24_original_coords:
-            # 置換後のリガンド内で、このE24の座標と一致する原子を探す
-            for replaced_coord in replaced_coords:
-                distance = np.linalg.norm(e24_coord - replaced_coord)
-                if distance < tolerance:
-                    found_matching_coords = True
-                    break
-            if found_matching_coords:
-                break
-        
-        assert found_matching_coords, \
-            "置換部分の座標がプローブの元の座標と一致しません。" \
-            "座標コピーが正しく機能していない可能性があります。"
+
+        # タンパク質を読み込む
+        from Bio.PDB import PDBParser
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure("prot", str(protein_path))
+        protein_coords = np.array([a.get_vector().get_array() for a in structure.get_atoms()])
+        protein_center = protein_coords.mean(axis=0)
+
+        # 置換後リガンドがタンパク質の近傍にあることを確認
+        ligand_center = replaced_coords.mean(axis=0)
+        distance_to_protein = np.linalg.norm(ligand_center - protein_center)
+        assert distance_to_protein < 50.0, \
+            f"リガンド中心がタンパク質中心から{distance_to_protein:.2f}Å離れています。" \
+            "座標変換に問題がある可能性があります。"
+
+        # transform_rot/tran がresultに含まれることを確認
+        assert 'transform_rot' in first_result, "transform_rotがresultに含まれていません"
+        assert 'transform_tran' in first_result, "transform_tranがresultに含まれていません"
     
     @pytest.mark.integration
     def test_replacement_coordinates_not_transformed(self, output_dir):
