@@ -400,15 +400,21 @@ def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0,
     transform_tran : np.ndarray (3,), optional
         並進ベクトル
     """
-    # アミノ酸 → 色のデフォルトマッピング
+    # アミノ酸 → 性質に基づく5色マッピング
+    # 疎水性=tv_green, 親水性=cyan, 酸性=tv_red, 塩基性=tv_blue, 芳香性=gray60
     default_colors = {
-        "LEU": "tv_green", "PHE": "tv_yellow", "ILE": "tv_green",
-        "VAL": "tv_green", "ALA": "lightteal", "GLY": "lightteal",
-        "PRO": "lightteal", "MET": "tv_yellow", "TRP": "tv_yellow",
-        "CYS": "yellow", "SER": "salmon", "THR": "salmon",
-        "ASN": "salmon", "GLN": "salmon", "TYR": "tv_yellow",
-        "HIS": "slate", "LYS": "tv_blue", "ARG": "tv_blue",
+        # 疎水性（緑）
+        "ALA": "tv_green", "VAL": "tv_green", "LEU": "tv_green",
+        "ILE": "tv_green", "MET": "tv_green", "PRO": "tv_green",
+        # 親水性（シアン）
+        "SER": "cyan", "THR": "cyan", "ASN": "cyan",
+        "GLN": "cyan", "CYS": "cyan", "GLY": "cyan",
+        # 酸性（赤）
         "ASP": "tv_red", "GLU": "tv_red",
+        # 塩基性（青）
+        "LYS": "tv_blue", "ARG": "tv_blue", "HIS": "tv_blue",
+        # 芳香性（濃い灰色）
+        "PHE": "gray60", "TRP": "gray60", "TYR": "gray60",
     }
 
     for aa, gz_path in profile_files.items():

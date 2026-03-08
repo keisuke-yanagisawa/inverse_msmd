@@ -6,34 +6,108 @@
 既に置換処理が完了した出力ディレクトリを指定して、後から図だけを生成できます。
 
 使用例:
-    # 基本的な使用方法（出力ディレクトリ内の全パターンを描画）
+    # 基本的な使用方法（ベストパターンのみ描画、変換行列を自動計算）
     python scripts/render_figures.py \
-        --output-dir output/test_render \
-        --probe-pdb data/sample_probes/E24.pdb \
-        --profile-dir data/profiles \
-        --probe-id E24
+        --output-dir output/batch_results/1-05 \
+        --probe-pdb probe/E21.pdb \
+        --from-probe probe/A38 \
+        --ligand-sdf target_protein/4gih_B_0X5.sdf \
+        --profile-dir profiles \
+        --probe-id E21
 
     # 特定のパターンのみ描画
     python scripts/render_figures.py \
-        --output-dir output/test_render \
-        --probe-pdb data/sample_probes/E24.pdb \
-        --profile-dir data/profiles \
-        --probe-id E24 \
+        --output-dir output/batch_results/1-05 \
+        --probe-pdb probe/E21.pdb \
+        --from-probe probe/A38 \
+        --ligand-sdf target_protein/4gih_B_0X5.sdf \
+        --profile-dir profiles \
+        --probe-id E21 \
         --patterns 0 2 16
 
-    # isomeshレベルとtilt角度を調整
+    # isomeshレベルを調整
     python scripts/render_figures.py \
-        --output-dir output/test_render \
-        --probe-pdb data/sample_probes/E24.pdb \
-        --profile-dir data/profiles \
-        --probe-id E24 \
-        --isomesh-level 3.0 \
-        --tilt-deg 30
+        --output-dir output/batch_results/1-05 \
+        --probe-pdb probe/E21.pdb \
+        --from-probe probe/A38 \
+        --ligand-sdf target_protein/4gih_B_0X5.sdf \
+        --profile-dir profiles \
+        --probe-id E21 \
+        --isomesh-level 3.0
 """
 
 import argparse
 import sys
 from pathlib import Path
+
+
+def _compute_transform(ligand_sdf, from_probe_base, probe_pdb,
+                       match_index=0, pattern_index=0):
+    """
+    リガンド・置換前プローブ・置換後プローブから変換行列を計算する。
+
+    Parameters
+    ----------
+    ligand_sdf : str
+        元のリガンドSDFファイルパス
+    from_probe_base : str
+        置換前プローブのベースパス（拡張子なし）
+    probe_pdb : str
+        置換後プローブのPDBファイルパス
+    match_index : int
+        リガンド中の部分構造マッチのインデックス
+    pattern_index : int
+        atom matchingパターンのインデックス
+
+    Returns
+    -------
+    rot : np.ndarray (3,3)
+    tran : np.ndarray (3,)
+    """
+    from inverse_msmd.substructure_replacement import (
+        find_substructure_in_ligand,
+        match_substructures,
+    )
+    from inverse_msmd.utils.mol_utils import read_mol_from_pdb_smi
+    from inverse_msmd.utils.bio_utils import SuperImposer
+    from rdkit import Chem
+
+    ligand = next(Chem.SDMolSupplier(ligand_sdf))
+    from_mol = read_mol_from_pdb_smi(
+        f"{from_probe_base}.pdb", f"{from_probe_base}.smi"
+    )
+    to_mol = read_mol_from_pdb_smi(
+        probe_pdb,
+        str(Path(probe_pdb).with_suffix(".smi")),
+    )
+
+    # 水素除去（integrated_substructure_replacementと同じ前処理）
+    ligand_no_h = Chem.RemoveHs(ligand)
+    from_no_h = Chem.RemoveHs(from_mol)
+    to_no_h = Chem.RemoveHs(to_mol)
+
+    matches = find_substructure_in_ligand(ligand_no_h, from_no_h)
+    atom_pairs_list = match_substructures(from_no_h, to_no_h)
+
+    if match_index >= len(matches):
+        raise ValueError(f"match_index={match_index} が範囲外（マッチ数: {len(matches)}）")
+    if pattern_index >= len(atom_pairs_list):
+        raise ValueError(f"pattern_index={pattern_index} が範囲外（パターン数: {len(atom_pairs_list)}）")
+
+    selected_match = matches[match_index]
+    atom_pairs = atom_pairs_list[pattern_index]
+
+    # integrated_substructure_replacementと同じSuperImpose計算
+    ligand_coords = ligand_no_h.GetConformer().GetPositions()
+    to_coords = to_no_h.GetConformer().GetPositions()
+
+    ligand_mcs_indices = [selected_match[i] for i in atom_pairs[0]]
+    ligand_mcs_coords = ligand_coords[ligand_mcs_indices]
+    e24_mcs_coords = to_coords[atom_pairs[1]]
+
+    si = SuperImposer()
+    si.fit(e24_mcs_coords, ligand_mcs_coords)
+    return si.rot_, si.tran_
 
 
 def main():
@@ -49,7 +123,21 @@ def main():
     )
     required.add_argument(
         "--probe-pdb", required=True,
-        help="プローブPDBファイルのパス"
+        help="置換後プローブのPDBファイルパス（例: probe/E21.pdb）"
+    )
+
+    transform = parser.add_argument_group("座標変換引数（プローブ・マップをタンパク質空間に変換）")
+    transform.add_argument(
+        "--from-probe",
+        help="置換前プローブのベースパス（拡張子なし、例: probe/A38）"
+    )
+    transform.add_argument(
+        "--ligand-sdf",
+        help="元のリガンドSDFファイルパス"
+    )
+    transform.add_argument(
+        "--match-index", type=int, default=0,
+        help="リガンド中の部分構造マッチのインデックス（デフォルト: 0）"
     )
 
     optional = parser.add_argument_group("オプション引数")
@@ -63,19 +151,11 @@ def main():
     )
     optional.add_argument(
         "--patterns", nargs="+", type=int,
-        help="描画するパターン番号（例: 0 2 16）。未指定時は全パターン"
+        help="描画するパターン番号（例: 0 2 16）。未指定時はベストスコアのパターン"
     )
     optional.add_argument(
         "--isomesh-level", type=float, default=5.0,
         help="isomeshの等値面レベル（デフォルト: 5.0）"
-    )
-    optional.add_argument(
-        "--tilt-deg", type=float, default=45.0,
-        help="視点のX軸方向傾斜角度（デフォルト: 45.0）"
-    )
-    optional.add_argument(
-        "--distance", type=float, default=50.0,
-        help="カメラ距離（デフォルト: 50.0）"
     )
     optional.add_argument(
         "--ray-size", type=int, nargs=2, default=[800, 800],
@@ -107,7 +187,7 @@ def main():
     # PyMOLのインポート確認
     try:
         from inverse_msmd.pymol_visualization import (
-            compute_probe_view, compute_protein_view,
+            compute_protein_view,
             render_complex, render_combined,
             render_probe_with_maps, _find_profile_files,
         )
@@ -116,20 +196,7 @@ def main():
         print("PyMOLがインストールされた環境で実行してください", file=sys.stderr)
         return 1
 
-    # 視点の計算
-    print(f"プローブ {probe_pdb} から視点を計算中...")
-    view = compute_probe_view(
-        str(probe_pdb),
-        distance=args.distance,
-        tilt_deg=args.tilt_deg,
-    )
-
     ray_size = tuple(args.ray_size)
-
-    # プローブ・マップをタンパク質空間に変換するための行列
-    # 本スクリプトではresultsデータ未ロードのためNone
-    transform_rot = None
-    transform_tran = None
 
     # プロファイルファイルの検索
     profile_files = {}
@@ -140,6 +207,60 @@ def main():
         else:
             print(f"警告: プロファイルファイルが見つかりません: {args.profile_dir}/{args.probe_id}_*")
 
+    # パターンファイルを検索（ベストパターンのインデックスも取得）
+    best_pattern_idx = 0
+    if args.patterns is not None:
+        pdb_files = [
+            output_dir / f"pattern_{p}_protein_aligned.pdb"
+            for p in args.patterns
+        ]
+        best_pattern_idx = args.patterns[0]
+    else:
+        # results.csvがあればベストスコアのパターンのみ描画
+        results_csv = output_dir / "results.csv"
+        if results_csv.exists():
+            import csv
+            best_score = float("-inf")
+            best_idx = None
+            with open(results_csv, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        score = float(row["score"])
+                        idx = int(row["pattern_index"])
+                        if score > best_score:
+                            best_score = score
+                            best_idx = idx
+                    except (ValueError, KeyError):
+                        continue
+            if best_idx is not None:
+                pdb_files = [output_dir / f"pattern_{best_idx}_protein_aligned.pdb"]
+                best_pattern_idx = best_idx
+                print(f"results.csvからベストパターン {best_idx} (score={best_score:.3f}) を選択")
+            else:
+                pdb_files = sorted(output_dir.glob("pattern_*_protein_aligned.pdb"))
+        else:
+            pdb_files = sorted(output_dir.glob("pattern_*_protein_aligned.pdb"))
+
+    # 変換行列の計算（ベストパターンのatom mappingを使用）
+    transform_rot = None
+    transform_tran = None
+    if args.from_probe and args.ligand_sdf:
+        print(f"変換行列を計算中（match_index={args.match_index}, pattern_index={best_pattern_idx}）...")
+        transform_rot, transform_tran = _compute_transform(
+            args.ligand_sdf, args.from_probe, str(probe_pdb),
+            match_index=args.match_index,
+            pattern_index=best_pattern_idx,
+        )
+        print("  完了")
+    elif args.from_probe or args.ligand_sdf:
+        print("警告: --from-probe と --ligand-sdf は両方指定する必要があります。"
+              "変換なしで描画します。", file=sys.stderr)
+
+    if not pdb_files:
+        print("エラー: パターンファイルが見つかりません", file=sys.stderr)
+        return 1
+
     # Panel B: プローブ+マップ（プロファイルがある場合のみ、1回だけ）
     if profile_files:
         panel_b = str(output_dir / "probe_map.png")
@@ -147,30 +268,12 @@ def main():
             probe_pdb=str(probe_pdb),
             profile_files=profile_files,
             output_png=panel_b,
-            view=view,
+            view=None,
             isomesh_level=args.isomesh_level,
             ray_size=ray_size,
             dpi=args.dpi,
-            transform_rot=transform_rot,
-            transform_tran=transform_tran,
         )
         print(f"  probe_map.png")
-
-    # パターンファイルを検索
-    if args.patterns is not None:
-        pdb_files = [
-            output_dir / f"pattern_{p}_protein_aligned.pdb"
-            for p in args.patterns
-        ]
-    else:
-        pdb_files = sorted(output_dir.glob("pattern_*_protein_aligned.pdb"))
-
-    # タンパク質固定視点（全ジョブ共通）
-    protein_view = view  # フォールバック
-    if pdb_files:
-        first_pdb = pdb_files[0]
-        if first_pdb.exists():
-            protein_view = compute_protein_view(str(first_pdb))
 
     rendered = 0
     for pdb_path in pdb_files:
@@ -183,6 +286,9 @@ def main():
         if not sdf_path.exists():
             print(f"  警告: {sdf_path.name} が見つかりません、スキップ")
             continue
+
+        # ポケット視点（リガンド方向にカメラ）
+        protein_view = compute_protein_view(str(pdb_path), ligand_sdf=str(sdf_path))
 
         # Panel A: 複合体
         render_complex(
