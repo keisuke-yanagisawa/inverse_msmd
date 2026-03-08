@@ -476,6 +476,7 @@ def render_complex(
 
     cmd.load(protein_pdb, "prot")
     cmd.load(ligand_sdf, "lig")
+    cmd.remove("hydrogens")
 
     _show_protein(cmd)
     _show_ligand(cmd)
@@ -533,6 +534,7 @@ def render_probe_with_maps(
     _common_settings(cmd)
 
     cmd.load(probe_pdb, "probe")
+    cmd.remove("hydrogens")
     _show_probe(cmd)
 
     tmpdir = tempfile.mkdtemp()
@@ -609,6 +611,7 @@ def render_combined(
     cmd.load(protein_pdb, "prot")
     cmd.load(ligand_sdf, "lig")
     cmd.load(probe_pdb, "probe")
+    cmd.remove("hydrogens")
 
     _show_protein(cmd)
     _show_ligand(cmd, stick_radius=0.15, sphere_scale=0.2)
