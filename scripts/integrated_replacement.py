@@ -12,6 +12,8 @@
         --from-file data/sample_probes/E23 \
         --to-file data/sample_probes/E24 \
         --output output/integrated/
+
+    注意: パッケージインストール後は `inverse-msmd-run` コマンドとしても使用できます。
 """
 
 import argparse

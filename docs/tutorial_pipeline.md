@@ -172,7 +172,8 @@ Step 1 で生成したプロファイルを使って、リガンドの部分構�
 ### 単件実行
 
 ```bash
-python scripts/integrated_replacement.py \
+# パッケージインストール後（推奨）
+inverse-msmd-run \
     --ligand 4hw3_A_lig.sdf \
     --protein 4hw3_A.pdb \
     --from-file probe/A38 \
@@ -180,12 +181,16 @@ python scripts/integrated_replacement.py \
     --output output/A38_to_A17/ \
     --profile-dir profiles/A17 \
     --probe-id A17
+
+# スクリプト直接実行も可能
+# python scripts/integrated_replacement.py ...
 ```
 
 ### バッチ実行
 
 ```bash
-python scripts/run_batch.py \
+# パッケージインストール後（推奨）
+inverse-msmd-batch \
     --batch-csv batch_config.csv \
     --ligand 4hw3_A_lig.sdf \
     --protein 4hw3_A.pdb \
@@ -193,6 +198,9 @@ python scripts/run_batch.py \
     --profile-dir profiles/ \
     --output output/batch_results \
     --render-figures
+
+# スクリプト直接実行も可能
+# python scripts/run_batch.py ...
 ```
 
 ### profile-dir のディレクトリ構造
@@ -256,8 +264,8 @@ job_id,from_probe,to_probe,match_index,comment,enabled
 ```bash
 cd 20251024_tyk2liang
 
-# バッチ実行
-python ../scripts/run_batch.py \
+# バッチ実行（パッケージインストール後・推奨）
+inverse-msmd-batch \
     --batch-csv batch_config.csv \
     --ligand target_protein/4gih_B_0X5.sdf \
     --protein target_protein/4GIH.pdb \
@@ -265,6 +273,9 @@ python ../scripts/run_batch.py \
     --profile-dir profiles \
     --output output \
     --render-figures
+
+# スクリプト直接実行も可能
+# python ../scripts/run_batch.py ...
 ```
 
 ---
