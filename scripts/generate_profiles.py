@@ -82,8 +82,8 @@ def main():
         help="参照プローブPDBファイルのパス",
     )
     parser.add_argument(
-        "--probe-resname", required=True,
-        help="トラジェクトリ中のプローブ残基名 (例: A17, E14)",
+        "--probe-resname", default=None,
+        help="トラジェクトリ中のプローブ残基名 (例: A17, E14)。省略時は --probe-id と同じ値",
     )
     parser.add_argument(
         "--probe-id", required=True,
@@ -137,6 +137,10 @@ def main():
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+
+    # --probe-resname のデフォルト化
+    if args.probe_resname is None:
+        args.probe_resname = args.probe_id
 
     # --msmd-dir と --trajectories/--topologies の排他バリデーション
     using_msmd_dir = args.msmd_dir is not None
