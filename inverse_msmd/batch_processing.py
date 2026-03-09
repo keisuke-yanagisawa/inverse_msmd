@@ -855,7 +855,13 @@ def run_batch_processing(
     if render_figures and batch_result.num_success > 0:
         logger.info("3D構造図を生成中...")
         try:
-            from inverse_msmd.pymol_visualization import render_batch_results as _render_batch
+            from inverse_msmd.pymol_visualization import (
+                render_batch_results as _render_batch,
+                compute_ligand_pca_view,
+            )
+
+            # 元の入力リガンドからPCA viewを1回だけ計算（全ジョブ共通）
+            shared_view = compute_ligand_pca_view(ligand_file)
 
             # 成功かつパターンありのジョブを to_probe でグループ化
             from collections import defaultdict
@@ -888,6 +894,7 @@ def run_batch_processing(
                         probe_id=to_probe,
                         job_ids=job_id_list,
                         job_transforms=job_transforms,
+                        protein_view=shared_view,
                     )
                 except Exception as e:
                     logger.warning(f"プローブ {to_probe} の描画中にエラー: {e}")
