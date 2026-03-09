@@ -242,6 +242,16 @@ def compute_protein_view(
     )
 
 
+def _apply_view(cmd, view, zoom_target="lig", zoom_buffer=8.0):
+    """ビュー設定 + ズーム + 傾きを適用する共通ヘルパー。"""
+    if view is not None:
+        cmd.set_view(view)
+    cmd.zoom(zoom_target, zoom_buffer)
+    # PCA視点のリガンド原子重なりを軽減する微小回転
+    cmd.turn("x", -15)
+    cmd.turn("y", 15)
+
+
 def _build_pymol_transform(rot, tran):
     """
     SuperImposerのrot, tranからPyMOL用4x4変換行列を生成。
@@ -605,9 +615,7 @@ def render_complex(
     _show_protein(cmd)
     _show_ligand(cmd)
 
-    if view is not None:
-        cmd.set_view(view)
-    cmd.zoom(zoom_target, zoom_buffer)
+    _apply_view(cmd, view, zoom_target, zoom_buffer)
 
     Path(output_png).parent.mkdir(parents=True, exist_ok=True)
     cmd.ray(*ray_size)
@@ -779,14 +787,7 @@ def render_combined(
             transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
             cmd.transform_object("probe", transform_matrix)
 
-        if view is not None:
-            cmd.set_view(view)
-        cmd.zoom(zoom_target, zoom_buffer)
-
-        # Subtle tilt to break flat PCA view and reduce ligand atom overlap
-        # (less than probe_map's 30° to preserve protein context visibility)
-        cmd.turn("x", -15)
-        cmd.turn("y", 15)
+        _apply_view(cmd, view, zoom_target, zoom_buffer)
 
         Path(output_png).parent.mkdir(parents=True, exist_ok=True)
         cmd.ray(*ray_size)
