@@ -857,14 +857,13 @@ def run_batch_processing(
         try:
             from inverse_msmd.pymol_visualization import render_batch_results as _render_batch
 
-            # 成功したジョブを to_probe でグループ化
+            # 成功かつパターンありのジョブを to_probe でグループ化
             from collections import defaultdict
             probe_groups = defaultdict(list)
             job_transforms = {}  # {job_id: (rot, tran)}
             for job_result in batch_result.job_results:
-                if job_result.status == "success":
+                if job_result.status == "success" and job_result.num_patterns > 0:
                     probe_groups[job_result.to_probe].append(job_result.job_id)
-                    # ベストパターンの変換行列を取得
                     if job_result.patterns:
                         best = job_result.patterns[0]
                         rot = best.get('transform_rot')
@@ -881,20 +880,21 @@ def run_batch_processing(
                 logger.info(
                     f"プローブ {to_probe} のジョブ ({len(job_id_list)}件) を描画中..."
                 )
-                _render_batch(
-                    output_base_dir=output_base_dir,
-                    probe_pdb=probe_pdb,
-                    profile_dir=profile_base_dir,
-                    probe_id=to_probe,
-                    job_ids=job_id_list,
-                    job_transforms=job_transforms,
-                )
+                try:
+                    _render_batch(
+                        output_base_dir=output_base_dir,
+                        probe_pdb=probe_pdb,
+                        profile_dir=profile_base_dir,
+                        probe_id=to_probe,
+                        job_ids=job_id_list,
+                        job_transforms=job_transforms,
+                    )
+                except Exception as e:
+                    logger.warning(f"プローブ {to_probe} の描画中にエラー: {e}")
 
             logger.info("3D描画完了")
         except ImportError as e:
             logger.warning(f"PyMOLが利用できないため3D描画をスキップします: {e}")
-        except Exception as e:
-            logger.warning(f"3D描画中にエラーが発生しました: {e}")
 
     return batch_result
 
