@@ -455,6 +455,8 @@ def render_complex(
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     save_pse: bool = False,
+    zoom_target: str = "lig",
+    zoom_buffer: float = 8.0,
 ) -> str:
     """
     タンパク質-リガンド複合体を描画します。
@@ -473,6 +475,10 @@ def render_complex(
         レイトレーシング画像サイズ
     dpi : int
         出力画像のDPI
+    zoom_target : str
+        ズーム対象のPyMOLオブジェクト名
+    zoom_buffer : float
+        ズーム時の余白（Å）
 
     Returns
     -------
@@ -492,8 +498,7 @@ def render_complex(
 
     if view is not None:
         cmd.set_view(view)
-    else:
-        cmd.zoom("lig", 8)
+    cmd.zoom(zoom_target, zoom_buffer)
 
     Path(output_png).parent.mkdir(parents=True, exist_ok=True)
     cmd.ray(*ray_size)
@@ -596,6 +601,8 @@ def render_combined(
     transform_rot=None,
     transform_tran=None,
     save_pse: bool = False,
+    zoom_target: str = "lig",
+    zoom_buffer: float = 8.0,
 ) -> str:
     """
     統合図（タンパク質+リガンド+プローブ+プロファイルマップ）を描画します。
@@ -613,13 +620,17 @@ def render_combined(
     output_png : str
         出力PNG画像パス
     view : Tuple[float, ...], optional
-        PyMOL視点。Noneの場合はプローブにzoom
+        PyMOL視点。Noneの場合はリガンドにzoom
     isomesh_level : float
         isomeshの等値面レベル
     ray_size : Tuple[int, int]
         レイトレーシング画像サイズ
     dpi : int
         出力画像のDPI
+    zoom_target : str
+        ズーム対象のPyMOLオブジェクト名
+    zoom_buffer : float
+        ズーム時の余白（Å）
 
     Returns
     -------
@@ -651,8 +662,7 @@ def render_combined(
 
         if view is not None:
             cmd.set_view(view)
-        else:
-            cmd.zoom("probe", 10)
+        cmd.zoom(zoom_target, zoom_buffer)
 
         Path(output_png).parent.mkdir(parents=True, exist_ok=True)
         cmd.ray(*ray_size)
@@ -784,7 +794,13 @@ def render_batch_results(
                 list(Path(first_job_dir).glob("*protein.pdb"))
             )
             if protein_candidates:
-                protein_view = compute_protein_view(str(protein_candidates[0]))
+                # リガンドSDFも検索してポケット視点を計算
+                ligand_candidates = list(Path(first_job_dir).glob("*ligand_replaced.sdf"))
+                ligand_sdf = str(ligand_candidates[0]) if ligand_candidates else None
+                protein_view = compute_protein_view(
+                    str(protein_candidates[0]),
+                    ligand_sdf=ligand_sdf,
+                )
         if protein_view is None:
             protein_view = view  # フォールバック
 
