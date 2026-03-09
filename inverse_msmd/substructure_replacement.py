@@ -1144,7 +1144,7 @@ def integrated_substructure_replacement(
         print(f"\n3D構造図を生成中...")
         try:
             from .pymol_visualization import (
-                compute_protein_view,
+                compute_ligand_pca_view,
                 render_complex, render_combined,
                 render_probe_with_maps, _find_profile_files
             )
@@ -1170,11 +1170,8 @@ def integrated_substructure_replacement(
             best = results[0]
             pat_idx = best['pattern_index']
 
-            # タンパク質空間の視点を計算（リガンドにフォーカス）
-            protein_view = compute_protein_view(
-                best['protein_file'],
-                ligand_sdf=best['ligand_file'],
-            )
+            # リガンドPCAで視点を計算（原子分散最大化）
+            protein_view = compute_ligand_pca_view(best['ligand_file'])
 
             # 複合体図（タンパク質+リガンド）
             panel_a = str(output_path / f"pattern_{pat_idx}_complex.png")

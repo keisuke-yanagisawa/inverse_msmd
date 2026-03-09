@@ -242,49 +242,73 @@ def compute_protein_view(
     )
 
 
+def compute_ligand_pca_view(ligand_sdf: str) -> Optional[Tuple[float, ...]]:
+    """リガンドSDFファイルの原子座標からPCA viewを計算する。
+
+    Returns
+    -------
+    Tuple[float, ...] or None
+        PyMOL set_view用の18要素タプル。読み込み失敗時はNone。
+    """
+    import numpy as np
+    from rdkit import Chem
+
+    mol = next(Chem.SDMolSupplier(ligand_sdf, removeHs=True), None)
+    if mol is None or mol.GetNumConformers() == 0:
+        return None
+    coords = mol.GetConformer().GetPositions()
+    if len(coords) < 3:
+        return None
+    return _ligand_pca_view(coords)
+
+
+def _ligand_pca_view(coords):
+    """原子座標配列からPCA viewタプルを計算する（共通ロジック）。"""
+    import numpy as np
+
+    center = coords.mean(axis=0)
+    centered = coords - center
+    cov = np.cov(centered.T)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    pc1 = eigenvectors[:, 2]
+    pc2 = eigenvectors[:, 1]
+    pc3 = eigenvectors[:, 0]
+
+    for vec in [pc1, pc2, pc3]:
+        if vec[np.argmax(np.abs(vec))] < 0:
+            vec *= -1
+    if np.dot(np.cross(pc1, pc2), pc3) < 0:
+        pc3 = -pc3
+
+    distance = 50.0
+    slab_near, slab_far = distance - 30.0, distance + 30.0
+    return (
+        pc1[0], pc1[1], pc1[2],
+        pc2[0], pc2[1], pc2[2],
+        pc3[0], pc3[1], pc3[2],
+        0.0, 0.0, -distance,
+        center[0], center[1], center[2],
+        slab_near, slab_far, -20.0,
+    )
+
+
 def _apply_view(cmd, view=None, zoom_target="lig", zoom_buffer=8.0):
     """リガンド原子のPCAで分散最大の視点を設定し、ズームする。
 
-    PyMOL上の "lig" オブジェクトの座標からPCAを計算し、
+    viewが指定されている場合はそれを使用（バッチ処理で全ジョブ統一視点）。
+    view=Noneの場合、PyMOL上の "lig" 座標からPCAを計算し、
     PC1(最大分散)→画面x軸、PC2→画面y軸、PC3(最小分散)→視線方向
     とすることで、2D投影上のリガンド原子の重なりを最小化する。
-    "lig" が存在しない場合は view パラメータにフォールバックする。
     """
     import numpy as np
 
-    coords = cmd.get_coords("lig")
-    if coords is not None and len(coords) >= 3:
-        center = coords.mean(axis=0)
-        centered = coords - center
-        cov = np.cov(centered.T)
-        eigenvalues, eigenvectors = np.linalg.eigh(cov)
-        # eigh: 固有値は昇順 → [:, 2]=最大分散, [:, 0]=最小分散
-        pc1 = eigenvectors[:, 2]   # 最大分散 → 画面x
-        pc2 = eigenvectors[:, 1]   # 中間    → 画面y
-        pc3 = eigenvectors[:, 0]   # 最小分散 → 視線方向
-
-        # 符号を安定化（各軸の最大成分が正になるよう）
-        for vec in [pc1, pc2, pc3]:
-            if vec[np.argmax(np.abs(vec))] < 0:
-                vec *= -1
-
-        # 右手座標系を保証
-        if np.dot(np.cross(pc1, pc2), pc3) < 0:
-            pc3 = -pc3
-
-        distance = 50.0
-        slab_near, slab_far = distance - 30.0, distance + 30.0
-        pca_view = (
-            pc1[0], pc1[1], pc1[2],
-            pc2[0], pc2[1], pc2[2],
-            pc3[0], pc3[1], pc3[2],
-            0.0, 0.0, -distance,
-            center[0], center[1], center[2],
-            slab_near, slab_far, -20.0,
-        )
-        cmd.set_view(pca_view)
-    elif view is not None:
+    if view is not None:
         cmd.set_view(view)
+    else:
+        coords = cmd.get_coords("lig")
+        if coords is not None and len(coords) >= 3:
+            pca_view = _ligand_pca_view(coords)
+            cmd.set_view(pca_view)
 
     cmd.zoom(zoom_target, zoom_buffer)
 
@@ -948,22 +972,12 @@ def render_batch_results(
         )
 
     if protein_view is None:
-        # 最初のジョブのタンパク質PDBを探す（job_dirsの最初の要素を参照）
-        import glob
+        # 最初のジョブのリガンドSDFからPCA viewを計算（全ジョブ共通）
         first_job_dir = job_dirs[0] if job_dirs else None
         if first_job_dir:
-            protein_candidates = (
-                list(Path(first_job_dir).glob("*protein_aligned.pdb")) +
-                list(Path(first_job_dir).glob("*protein.pdb"))
-            )
-            if protein_candidates:
-                # リガンドSDFも検索してポケット視点を計算
-                ligand_candidates = list(Path(first_job_dir).glob("*ligand_replaced.sdf"))
-                ligand_sdf = str(ligand_candidates[0]) if ligand_candidates else None
-                protein_view = compute_protein_view(
-                    str(protein_candidates[0]),
-                    ligand_sdf=ligand_sdf,
-                )
+            ligand_candidates = list(Path(first_job_dir).glob("*ligand_replaced.sdf"))
+            if ligand_candidates:
+                protein_view = compute_ligand_pca_view(str(ligand_candidates[0]))
         if protein_view is None:
             protein_view = view  # フォールバック
 
