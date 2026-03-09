@@ -860,9 +860,17 @@ def run_batch_processing(
             # 成功したジョブを to_probe でグループ化
             from collections import defaultdict
             probe_groups = defaultdict(list)
+            job_transforms = {}  # {job_id: (rot, tran)}
             for job_result in batch_result.job_results:
                 if job_result.status == "success":
                     probe_groups[job_result.to_probe].append(job_result.job_id)
+                    # ベストパターンの変換行列を取得
+                    if job_result.patterns:
+                        best = job_result.patterns[0]
+                        rot = best.get('transform_rot')
+                        tran = best.get('transform_tran')
+                        if rot is not None:
+                            job_transforms[job_result.job_id] = (rot, tran)
 
             for to_probe, job_id_list in probe_groups.items():
                 probe_pdb = str(Path(probe_base_dir) / f"{to_probe}.pdb")
@@ -879,6 +887,7 @@ def run_batch_processing(
                     profile_dir=profile_base_dir,
                     probe_id=to_probe,
                     job_ids=job_id_list,
+                    job_transforms=job_transforms,
                 )
 
             logger.info("3D描画完了")

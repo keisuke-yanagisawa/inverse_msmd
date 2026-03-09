@@ -846,6 +846,7 @@ def render_batch_results(
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     job_ids: Optional[List[str]] = None,
+    job_transforms: Optional[Dict[str, tuple]] = None,
     transform_rot=None,
     transform_tran=None,
 ) -> List[Dict]:
@@ -990,16 +991,10 @@ def render_batch_results(
 
         # Panel C: 統合（各ジョブ固有の変換行列を使用）
         if profile_files:
-            # ジョブ固有の変換行列を読み込み
+            # ジョブ固有の変換行列を取得
             job_rot, job_tran = transform_rot, transform_tran
-            transform_json = job_dir / "transform.json"
-            if transform_json.exists():
-                import json as _json
-                import numpy as np
-                with open(transform_json) as tf:
-                    tdata = _json.load(tf)
-                job_rot = np.array(tdata['transform_rot'])
-                job_tran = np.array(tdata['transform_tran'])
+            if job_transforms and job_id in job_transforms:
+                job_rot, job_tran = job_transforms[job_id]
 
             panel_c = str(job_dir / "panel_c_combined.png")
             render_combined(
