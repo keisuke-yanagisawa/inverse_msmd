@@ -518,7 +518,7 @@ def render_probe_with_maps(
     profile_files: Dict[str, str],
     output_png: str,
     view: Optional[Tuple[float, ...]] = None,
-    isomesh_level: float = 5.0,
+    isomesh_level: float = 9.0,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     transform_rot=None,
@@ -571,7 +571,11 @@ def render_probe_with_maps(
         if view is not None:
             cmd.set_view(view)
         else:
-            cmd.zoom("probe", 10)
+            # プローブ+isomesh全体が見える視点を自動計算し、斜め視点に回転
+            cmd.orient("probe")
+            cmd.zoom("probe", 4)
+            cmd.turn("x", -30)
+            cmd.turn("y", 30)
 
         Path(output_png).parent.mkdir(parents=True, exist_ok=True)
         cmd.ray(*ray_size)
@@ -595,7 +599,7 @@ def render_combined(
     profile_files: Dict[str, str],
     output_png: str,
     view: Optional[Tuple[float, ...]] = None,
-    isomesh_level: float = 5.0,
+    isomesh_level: float = 9.0,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     transform_rot=None,
@@ -723,7 +727,7 @@ def render_batch_results(
     profile_amino_acids: Optional[List[str]] = None,
     view: Optional[Tuple[float, ...]] = None,
     protein_view: Optional[Tuple[float, ...]] = None,
-    isomesh_level: float = 5.0,
+    isomesh_level: float = 9.0,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     job_ids: Optional[List[str]] = None,

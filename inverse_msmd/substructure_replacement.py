@@ -1144,13 +1144,12 @@ def integrated_substructure_replacement(
         print(f"\n3D構造図を生成中...")
         try:
             from .pymol_visualization import (
-                compute_probe_view, compute_protein_view,
+                compute_protein_view,
                 render_complex, render_combined,
                 render_probe_with_maps, _find_profile_files
             )
 
             probe_pdb = f"{to_file}.pdb"
-            probe_view = compute_probe_view(probe_pdb)
 
             # プロファイルファイルの検索
             profile_files = {}
@@ -1164,7 +1163,6 @@ def integrated_substructure_replacement(
                     probe_pdb=probe_pdb,
                     profile_files=profile_files,
                     output_png=panel_b,
-                    view=probe_view,
                 )
                 print(f"  ✓ プローブ+マップ: {panel_b}")
 
