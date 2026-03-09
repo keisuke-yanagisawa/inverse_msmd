@@ -783,6 +783,11 @@ def render_combined(
             cmd.set_view(view)
         cmd.zoom(zoom_target, zoom_buffer)
 
+        # Subtle tilt to break flat PCA view and reduce ligand atom overlap
+        # (less than probe_map's 30° to preserve protein context visibility)
+        cmd.turn("x", -15)
+        cmd.turn("y", 15)
+
         Path(output_png).parent.mkdir(parents=True, exist_ok=True)
         cmd.ray(*ray_size)
         cmd.png(output_png, dpi=dpi)
@@ -842,7 +847,7 @@ def render_batch_results(
     profile_amino_acids: Optional[List[str]] = None,
     view: Optional[Tuple[float, ...]] = None,
     protein_view: Optional[Tuple[float, ...]] = None,
-    isomesh_level: float = 9.0,
+    isomesh_level: Optional[float] = None,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     job_ids: Optional[List[str]] = None,
@@ -873,8 +878,8 @@ def render_batch_results(
         Noneの場合はプロファイルディレクトリ内の全アミノ酸
     view : Tuple[float, ...], optional
         PyMOL視点。Noneの場合はprobe_pdbからPCAで自動計算
-    isomesh_level : float
-        isomeshの等値面レベル
+    isomesh_level : float, optional
+        isomeshの等値面レベル。Noneの場合はプローブ近傍値から自動計算
     ray_size : Tuple[int, int]
         レイトレーシング画像サイズ
     dpi : int
