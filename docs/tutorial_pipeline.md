@@ -214,35 +214,26 @@ Step 1 で生成したプロファイルを使って、リガンドの部分構�
 ### 単件実行
 
 ```bash
-# パッケージインストール後（推奨）
 inverse-msmd-run \
-    --ligand 4hw3_A_lig.sdf \
-    --protein 4hw3_A.pdb \
-    --from-file probe/A38 \
-    --to-file probe/A17 \
+    --ligand target_protein/4gih_B_0X5.sdf \
+    --protein target_protein/4GIH.pdb \
+    --from-probe probe/A38 \
+    --to-probe probe/A17 \
     --output output/A38_to_A17/ \
-    --profile-dir profiles/A17 \
+    --profile-dir profiles \
     --probe-id A17
-
-# スクリプト直接実行も可能
-# python scripts/integrated_replacement.py ...
 ```
 
 ### バッチ実行
 
 ```bash
-# パッケージインストール後（推奨）
 inverse-msmd-batch \
     --batch-csv batch_config.csv \
-    --ligand 4hw3_A_lig.sdf \
-    --protein 4hw3_A.pdb \
-    --probe-dir probe/ \
-    --profile-dir profiles/ \
-    --output output/batch_results \
-    --render-figures
-
-# スクリプト直接実行も可能
-# python scripts/run_batch.py ...
+    --ligand target_protein/4gih_B_0X5.sdf \
+    --protein target_protein/4GIH.pdb \
+    --probe-dir probe \
+    --profile-dir profiles \
+    --output output/batch_results
 ```
 
 ### profile-dir のディレクトリ構造
@@ -280,7 +271,7 @@ job_id,from_probe,to_probe,match_index,comment,enabled
 
 ## 実践例: TYK2阻害剤のプローブ置換解析
 
-`20251024_tyk2liang/` ディレクトリに実際の解析例があります。
+`20251024_tyk2liang/` ディレクトリにTYK2阻害剤を対象とした解析例があります。
 
 ### データ構造
 
@@ -288,37 +279,67 @@ job_id,from_probe,to_probe,match_index,comment,enabled
 20251024_tyk2liang/
 ├── target_protein/
 │   ├── 4GIH.pdb              # TYK2タンパク質
-│   └── 4gih_B_0X5.sdf        # 共結晶化リガンド
+│   └── 4gih_B_0X5.sdf        # 共結晶化リガンド（0X5）
 ├── probe/
-│   ├── A01.pdb, A01.smi      # プローブ分子群（66種）
-│   ├── A08.pdb, A08.smi
+│   ├── A01.pdb, A01.smi      # プローブ分子群
+│   ├── A17.pdb, A17.smi
+│   ├── A38.pdb, A38.smi
 │   └── ...
 ├── profiles/
-│   ├── A01_ALA_profile.dx.gz  # 事前生成済みプロファイル
+│   ├── A01_ALA_profile.dx.gz  # 事前生成済みプロファイル（フラット配置）
 │   ├── A01_ARG_profile.dx.gz
+│   ├── A17_ALA_profile.dx.gz
 │   └── ...
 ├── batch_config.csv           # バッチ設定
 └── output/                    # 解析結果
 ```
 
-### 実行
+### 単件実行例
 
 ```bash
 cd 20251024_tyk2liang
 
-# バッチ実行（パッケージインストール後・推奨）
+# A38→A17 プローブ置換
+inverse-msmd-run \
+    --ligand target_protein/4gih_B_0X5.sdf \
+    --protein target_protein/4GIH.pdb \
+    --from-probe probe/A38 \
+    --to-probe probe/A17 \
+    --output output/A38_to_A17/ \
+    --profile-dir profiles \
+    --probe-id A17
+```
+
+出力例:
+```
+パターン 0: スコア=28.35, SMILES=O=C(Nc1ccnc(NC(=O)C2CC2)c1)c1ccccc1Cl
+```
+
+### バッチ実行例
+
+```bash
+cd 20251024_tyk2liang
+
 inverse-msmd-batch \
     --batch-csv batch_config.csv \
     --ligand target_protein/4gih_B_0X5.sdf \
     --protein target_protein/4GIH.pdb \
     --probe-dir probe \
     --profile-dir profiles \
-    --output output \
-    --render-figures
-
-# スクリプト直接実行も可能
-# python ../scripts/run_batch.py ...
+    --output output
 ```
+
+バッチ実行後、`output/batch_summary.csv` にスコア一覧が出力されます:
+
+```csv
+job_id,from_probe,to_probe,match_index,status,num_patterns,best_score,...
+1-01,A38,A38,0,success,1,64.70,...    # 自己置換（ベースライン）
+1-02,A38,A01,0,success,1,23.82,...
+1-03,A38,A17,0,success,1,28.35,...
+```
+
+自己置換（A38→A38）のスコア 64.70 がベースラインとなり、
+各プローブへの置換スコアとの比較で置換の有利・不利を判断します。
 
 ---
 
@@ -332,61 +353,6 @@ MSMDプロファイル（プローブ周辺の期待される残基分布）と
 score = Σ log(profile_value_at_Cβ)
 ```
 
-- **スコアが高い（0に近い）**: プロファイルとの一致が良い → 有利な置換
-- **スコアが低い（大きな負値）**: プロファイルとの一致が悪い → 不利な置換
+- **スコアが高い**: プロファイルとの一致が良い → 有利な置換
+- **スコアが低い（小さい値）**: プロファイルとの一致が悪い → 不利な置換
 - **同じプローブへの自己置換**: ベースラインスコアとして使用
-
-### 注意
-
-- スコアの絶対値はプローブごとに異なるため、同一プローブ内での相対比較に使用
-- 実験値（IC50等）との相関は系に依存。参考指標として使用
-
----
-
-## トラブルシューティング
-
-### pytraj が見つからない
-
-```bash
-# conda 環境で実行（pip では入らない）
-conda install -c conda-forge pytraj
-```
-
-### メモリ不足 (OOM)
-
-```bash
-# 並列数を下げる
-python scripts/generate_profiles.py ... --n-jobs 1
-
-# 特定のアミノ酸だけ先に処理
-python scripts/generate_profiles.py ... --amino-acids ALA LEU
-```
-
-### 中断からの再開
-
-`generate_profiles` はレジューム機能を持っています。
-既に生成済みのファイル（サイズ > 0）は自動スキップされるため、
-同じコマンドを再実行するだけで未完了分から処理を再開します。
-
-### プロファイルの確認
-
-生成されたプロファイルは PyMOL で可視化できます:
-
-```python
-# PyMOL
-load profiles/A17/A17_ALA_profile.dx, ALA_profile
-isomesh ALA_mesh, ALA_profile, level=1.5
-```
-
-または inverse_msmd の描画機能:
-
-```bash
-python scripts/render_figures.py \
-    --protein protein.pdb \
-    --ligand ligand.sdf \
-    --probe probe/A17/A17.pdb \
-    --profile-dir profiles/A17 \
-    --probe-id A17 \
-    --output figure.png \
-    --save-pse  # PyMOLセッションファイルも保存
-```
