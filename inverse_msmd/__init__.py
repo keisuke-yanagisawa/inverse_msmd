@@ -56,6 +56,13 @@ utils.mol_utils : 分子データ操作ユーティリティ
     分子構造データの読み込み、変換、出力機能
     - read_mol_from_pdb_smi: PDBとSMIから分子を読み込み
 
+profile_generator : プロファイル生成機能 (要pytraj)
+    MSMDトラジェクトリから残基相互作用プロファイルを生成
+    - generate_profiles: 統合パイプライン（推奨）
+    - create_single_profile: 個別トラジェクトリからのプロファイル生成
+    - combine_profiles: 複数プロファイルの統合・バルク正規化
+    - compress_profile: DXファイルのgzip圧縮
+
 使用例
 ------
 統合APIを使用した基本的なワークフロー：
