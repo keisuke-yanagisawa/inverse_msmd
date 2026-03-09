@@ -5,6 +5,13 @@
 MSMDトラジェクトリ群から残基相互作用プロファイルを一括生成する。
 
 使用例:
+    # explorer_msmd出力ディレクトリを直接指定
+    python scripts/generate_profiles.py \
+        --msmd-dir /path/to/working_dir \
+        --ref-probe probe/A17/A17.pdb \
+        --probe-id A17 \
+        --output profiles/A17
+
     # 基本的な使用法（単一トラジェクトリ）
     python scripts/generate_profiles.py \
         --trajectories system0/traj.xtc \
@@ -38,6 +45,7 @@ MSMDトラジェクトリ群から残基相互作用プロファイルを一括�
 """
 
 import argparse
+import glob
 import logging
 import sys
 from pathlib import Path
@@ -50,11 +58,23 @@ def main():
     )
 
     parser.add_argument(
-        "--trajectories", nargs="+", required=True,
+        "--msmd-dir",
+        help="explorer_msmd出力ディレクトリ。--trajectories/--topologiesの代替として使用可",
+    )
+    parser.add_argument(
+        "--traj-pattern", default="system*/simulation/*.xtc",
+        help="--msmd-dir使用時のトラジェクトリglobパターン (デフォルト: system*/simulation/*.xtc)",
+    )
+    parser.add_argument(
+        "--topo-pattern", default="system*/prep/*.pdb",
+        help="--msmd-dir使用時のトポロジーglobパターン (デフォルト: system*/prep/*.pdb)",
+    )
+    parser.add_argument(
+        "--trajectories", nargs="+",
         help="トラジェクトリファイル (.xtc) のパス（複数指定可）",
     )
     parser.add_argument(
-        "--topologies", nargs="+", required=True,
+        "--topologies", nargs="+",
         help="トポロジーファイル (.pdb) のパス（--trajectoriesと同数必要）",
     )
     parser.add_argument(
@@ -118,15 +138,40 @@ def main():
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    # バリデーション
-    if len(args.trajectories) != len(args.topologies):
-        print(
-            f"エラー: トラジェクトリ数({len(args.trajectories)})と"
-            f"トポロジー数({len(args.topologies)})が一致しません"
-        )
+    # --msmd-dir と --trajectories/--topologies の排他バリデーション
+    using_msmd_dir = args.msmd_dir is not None
+    using_explicit = args.trajectories is not None or args.topologies is not None
+
+    if using_msmd_dir and using_explicit:
+        print("エラー: --msmd-dir と --trajectories/--topologies は同時に指定できません")
         return 1
 
-    pairs = list(zip(args.trajectories, args.topologies))
+    if not using_msmd_dir and not using_explicit:
+        print("エラー: --msmd-dir または --trajectories と --topologies のいずれかを指定してください")
+        return 1
+
+    # トラジェクトリ/トポロジーペアの生成
+    if using_msmd_dir:
+        msmd_dir = Path(args.msmd_dir)
+        trajs = sorted(glob.glob(str(msmd_dir / args.traj_pattern)))
+        topos = sorted(glob.glob(str(msmd_dir / args.topo_pattern)))
+        if len(trajs) != len(topos):
+            print(
+                f"エラー: トラジェクトリ数({len(trajs)})と"
+                f"トポロジー数({len(topos)})が一致しません"
+            )
+            print(f"  トラジェクトリパターン: {msmd_dir / args.traj_pattern}")
+            print(f"  トポロジーパターン    : {msmd_dir / args.topo_pattern}")
+            return 1
+        pairs = list(zip(trajs, topos))
+    else:
+        if len(args.trajectories) != len(args.topologies):
+            print(
+                f"エラー: トラジェクトリ数({len(args.trajectories)})と"
+                f"トポロジー数({len(args.topologies)})が一致しません"
+            )
+            return 1
+        pairs = list(zip(args.trajectories, args.topologies))
 
     # 入力ファイルの存在確認
     missing = []
