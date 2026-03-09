@@ -154,7 +154,7 @@ def main():
         help="描画するパターン番号（例: 0 2 16）。未指定時はベストスコアのパターン"
     )
     optional.add_argument(
-        "--isomesh-level", type=float, default=5.0,
+        "--isomesh-level", type=float, default=9.0,
         help="isomeshの等値面レベル（デフォルト: 5.0）"
     )
     optional.add_argument(
@@ -165,6 +165,10 @@ def main():
     optional.add_argument(
         "--dpi", type=int, default=150,
         help="出力画像のDPI（デフォルト: 150）"
+    )
+    optional.add_argument(
+        "--save-pse", action="store_true",
+        help="PyMOLセッションファイル(.pse)も保存する"
     )
 
     args = parser.parse_args()
@@ -272,6 +276,7 @@ def main():
             isomesh_level=args.isomesh_level,
             ray_size=ray_size,
             dpi=args.dpi,
+            save_pse=args.save_pse,
         )
         print(f"  probe_map.png")
 
@@ -298,6 +303,7 @@ def main():
             view=protein_view,
             ray_size=ray_size,
             dpi=args.dpi,
+            save_pse=args.save_pse,
         )
 
         # Panel C: 統合図（プロファイルがある場合のみ）
@@ -314,6 +320,7 @@ def main():
                 dpi=args.dpi,
                 transform_rot=transform_rot,
                 transform_tran=transform_tran,
+                save_pse=args.save_pse,
             )
 
         rendered += 1

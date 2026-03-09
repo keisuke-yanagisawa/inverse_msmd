@@ -1,0 +1,3 @@
+[submodule "exprorer_msmd"]
+	path = exprorer_msmd
+	url = https://github.com/keisuke-yanagisawa/exprorer_msmd.git

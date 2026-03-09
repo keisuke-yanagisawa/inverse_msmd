@@ -426,6 +426,8 @@ def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0,
                 shutil.copyfileobj(f_in, f_out)
 
         # DXデータをタンパク質空間に再サンプリング（指定時）
+        # プローブPDBとDXグリッドは同じ座標空間で生成されているため、
+        # プローブと同じ変換行列をそのまま適用する
         if transform_rot is not None:
             dx_transformed = Path(tmpdir) / f"{aa}_profile_transformed.dx"
             _resample_dx_file(str(dx_path), str(dx_transformed), transform_rot, transform_tran)
@@ -452,6 +454,7 @@ def render_complex(
     view: Optional[Tuple[float, ...]] = None,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
+    save_pse: bool = False,
 ) -> str:
     """
     タンパク質-リガンド複合体を描画します。
@@ -496,6 +499,12 @@ def render_complex(
     cmd.ray(*ray_size)
     cmd.png(output_png, dpi=dpi)
     logger.info(f"Saved: {output_png}")
+
+    if save_pse:
+        pse_path = str(Path(output_png).with_suffix(".pse"))
+        cmd.save(pse_path)
+        logger.info(f"Saved: {pse_path}")
+
     return output_png
 
 
@@ -509,6 +518,7 @@ def render_probe_with_maps(
     dpi: int = 150,
     transform_rot=None,
     transform_tran=None,
+    save_pse: bool = False,
 ) -> str:
     """
     プローブ+プロファイルマップを描画します。
@@ -562,6 +572,11 @@ def render_probe_with_maps(
         cmd.ray(*ray_size)
         cmd.png(output_png, dpi=dpi)
         logger.info(f"Saved: {output_png}")
+
+        if save_pse:
+            pse_path = str(Path(output_png).with_suffix(".pse"))
+            cmd.save(pse_path)
+            logger.info(f"Saved: {pse_path}")
     finally:
         shutil.rmtree(tmpdir)
 
@@ -580,6 +595,7 @@ def render_combined(
     dpi: int = 150,
     transform_rot=None,
     transform_tran=None,
+    save_pse: bool = False,
 ) -> str:
     """
     統合図（タンパク質+リガンド+プローブ+プロファイルマップ）を描画します。
@@ -642,6 +658,11 @@ def render_combined(
         cmd.ray(*ray_size)
         cmd.png(output_png, dpi=dpi)
         logger.info(f"Saved: {output_png}")
+
+        if save_pse:
+            pse_path = str(Path(output_png).with_suffix(".pse"))
+            cmd.save(pse_path)
+            logger.info(f"Saved: {pse_path}")
     finally:
         shutil.rmtree(tmpdir)
 
