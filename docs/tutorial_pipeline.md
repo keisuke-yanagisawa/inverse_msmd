@@ -195,6 +195,28 @@ python scripts/run_batch.py \
     --render-figures
 ```
 
+### profile-dir のディレクトリ構造
+
+`--profile-dir` にはプロファイルファイルをフラットに配置します:
+
+```
+profiles/
+├── A01_ALA_profile.dx.gz
+├── A01_ARG_profile.dx.gz
+├── ...
+├── A17_ALA_profile.dx.gz
+└── ...
+```
+
+ファイル名の規則: `{probe_id}_{アミノ酸3文字}_profile.dx.gz`
+
+`generate_profiles.py` の出力をそのままバッチ処理に使用する場合:
+```bash
+# 各プローブのプロファイルを共通ディレクトリに生成
+python scripts/generate_profiles.py ... --probe-id A01 --output profiles/
+python scripts/generate_profiles.py ... --probe-id A17 --output profiles/
+```
+
 ### バッチCSV形式
 
 ```csv
