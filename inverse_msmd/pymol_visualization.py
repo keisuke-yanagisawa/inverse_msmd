@@ -382,7 +382,114 @@ def _show_probe(cmd, obj_name="probe", stick_radius=0.2, sphere_scale=0.3):
     cmd.set("sphere_scale", sphere_scale, obj_name)
 
 
-def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0,
+def _compute_adaptive_isomesh_level(
+    probe_pdb: str,
+    profile_files: Dict[str, str],
+    radius: float = 15.0,
+    percentile: float = 99.95,
+    min_level: float = 2.0,
+) -> float:
+    """
+    プローブ近傍のプロファイル値からisomesh閾値を自動計算する。
+
+    Parameters
+    ----------
+    probe_pdb : str
+        プローブPDBファイルパス
+    profile_files : Dict[str, str]
+        {アミノ酸名: dx.gzファイルパス}
+    radius : float
+        プローブ原子からの近傍半径（Å）
+    percentile : float
+        近傍ボクセル値のパーセンタイル（閾値として使用）
+    min_level : float
+        閾値の最小値
+
+    Returns
+    -------
+    float
+        計算されたisomesh_level
+    """
+    from Bio.PDB import PDBParser
+
+    # プローブ原子座標
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("probe", probe_pdb)
+    probe_coords = np.array([a.get_vector().get_array() for a in structure.get_atoms()])
+
+    nearby_values = []
+
+    for aa, gz_path in profile_files.items():
+        # DXファイルを読み込み
+        with gzip.open(str(gz_path), "rt") as f:
+            origin = None
+            delta = np.zeros(3)
+            grid_shape = None
+            vals = []
+            reading = False
+            delta_idx = 0
+            for line in f:
+                if line.startswith("origin"):
+                    origin = np.array([float(x) for x in line.split()[1:4]])
+                elif line.startswith("delta"):
+                    parts = line.split()
+                    delta[delta_idx] = float(parts[1 + delta_idx])
+                    delta_idx += 1
+                elif line.startswith("object 1"):
+                    parts = line.split()
+                    grid_shape = (int(parts[5]), int(parts[6]), int(parts[7]))
+                elif "follows" in line:
+                    reading = True
+                    continue
+                elif reading:
+                    if line.startswith("attribute") or line.startswith("object"):
+                        break
+                    vals.extend(float(x) for x in line.split())
+
+        if origin is None or grid_shape is None or len(vals) == 0:
+            continue
+
+        grid = np.array(vals).reshape(grid_shape)
+
+        # 各プローブ原子の近傍ボクセルを収集
+        for atom_coord in probe_coords:
+            # 原子座標 → グリッドインデックス
+            idx_float = (atom_coord - origin) / delta
+            # 半径内のインデックス範囲
+            r_voxels = int(np.ceil(radius / delta[0]))
+            center_idx = np.round(idx_float).astype(int)
+
+            i_min = max(0, center_idx[0] - r_voxels)
+            i_max = min(grid_shape[0], center_idx[0] + r_voxels + 1)
+            j_min = max(0, center_idx[1] - r_voxels)
+            j_max = min(grid_shape[1], center_idx[1] + r_voxels + 1)
+            k_min = max(0, center_idx[2] - r_voxels)
+            k_max = min(grid_shape[2], center_idx[2] + r_voxels + 1)
+
+            subgrid = grid[i_min:i_max, j_min:j_max, k_min:k_max]
+
+            # 実際の距離フィルタ
+            ii, jj, kk = np.mgrid[i_min:i_max, j_min:j_max, k_min:k_max]
+            coords = origin + np.stack([ii, jj, kk], axis=-1) * delta
+            dist = np.linalg.norm(coords - atom_coord, axis=-1)
+            mask = dist <= radius
+
+            values = subgrid[mask]
+            finite_values = values[np.isfinite(values) & (values > 1.0)]
+            nearby_values.extend(finite_values)
+
+    if len(nearby_values) == 0:
+        logger.warning("プローブ近傍に有意なプロファイル値がありません。min_levelを使用します。")
+        return min_level
+
+    nearby_values = np.array(nearby_values)
+    level = float(np.percentile(nearby_values, percentile))
+    level = max(level, min_level)
+    logger.info(f"適応的isomesh閾値: {level:.1f} (p{percentile}, {len(nearby_values)} voxels)")
+    return level
+
+
+def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=9.0,
                    transform_rot=None, transform_tran=None):
     """
     プロファイルマップを読み込んでisomesh表示
@@ -445,6 +552,8 @@ def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=5.0,
         cmd.isomesh(mesh_name, obj_name, level=isomesh_level)
         color = default_colors.get(aa.upper(), "gray50")
         cmd.color(color, mesh_name)
+        cmd.set("mesh_color", color, mesh_name)
+        cmd.set("transparency", 0.4, mesh_name)
 
 
 def render_complex(
@@ -518,7 +627,7 @@ def render_probe_with_maps(
     profile_files: Dict[str, str],
     output_png: str,
     view: Optional[Tuple[float, ...]] = None,
-    isomesh_level: float = 9.0,
+    isomesh_level: Optional[float] = None,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     transform_rot=None,
@@ -538,8 +647,8 @@ def render_probe_with_maps(
         出力PNG画像パス
     view : Tuple[float, ...], optional
         PyMOL視点。Noneの場合はプローブにzoom
-    isomesh_level : float
-        isomeshの等値面レベル
+    isomesh_level : float, optional
+        isomeshの等値面レベル。Noneの場合はプローブ近傍値から自動計算
     ray_size : Tuple[int, int]
         レイトレーシング画像サイズ
     dpi : int
@@ -550,6 +659,9 @@ def render_probe_with_maps(
     str
         出力画像のパス
     """
+    if isomesh_level is None:
+        isomesh_level = _compute_adaptive_isomesh_level(probe_pdb, profile_files)
+
     cmd = _ensure_pymol()
     cmd.reinitialize()
     _common_settings(cmd)
@@ -599,7 +711,7 @@ def render_combined(
     profile_files: Dict[str, str],
     output_png: str,
     view: Optional[Tuple[float, ...]] = None,
-    isomesh_level: float = 9.0,
+    isomesh_level: Optional[float] = None,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     transform_rot=None,
@@ -625,8 +737,8 @@ def render_combined(
         出力PNG画像パス
     view : Tuple[float, ...], optional
         PyMOL視点。Noneの場合はリガンドにzoom
-    isomesh_level : float
-        isomeshの等値面レベル
+    isomesh_level : float, optional
+        isomeshの等値面レベル。Noneの場合はプローブ近傍値から自動計算
     ray_size : Tuple[int, int]
         レイトレーシング画像サイズ
     dpi : int
@@ -641,6 +753,9 @@ def render_combined(
     str
         出力画像のパス
     """
+    if isomesh_level is None:
+        isomesh_level = _compute_adaptive_isomesh_level(probe_pdb, profile_files)
+
     cmd = _ensure_pymol()
     cmd.reinitialize()
     _common_settings(cmd)
