@@ -1098,7 +1098,20 @@ def integrated_substructure_replacement(
                 writer.writerow(row)
         
         print(f"  ✓ CSV出力: {csv_path}")
-    
+
+        # 変換行列をJSON保存（3D描画用）
+        best_result = results[0]  # スコア降順ソート済み
+        if 'transform_rot' in best_result and best_result['transform_rot'] is not None:
+            import json as _json
+            transform_path = csv_path.parent / "transform.json"
+            transform_data = {
+                'pattern_index': best_result['pattern_index'],
+                'transform_rot': best_result['transform_rot'].tolist(),
+                'transform_tran': best_result['transform_tran'].tolist(),
+            }
+            with open(transform_path, 'w') as tf:
+                _json.dump(transform_data, tf)
+
     # 画像出力（オプション）
     if image_output and results and calculate_scores:
         # スコアがあるパターンのみを収集

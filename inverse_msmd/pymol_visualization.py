@@ -988,8 +988,19 @@ def render_batch_results(
         # Panel B: 共通
         result_info["panel_b"] = panel_b_path
 
-        # Panel C: 統合
+        # Panel C: 統合（各ジョブ固有の変換行列を使用）
         if profile_files:
+            # ジョブ固有の変換行列を読み込み
+            job_rot, job_tran = transform_rot, transform_tran
+            transform_json = job_dir / "transform.json"
+            if transform_json.exists():
+                import json as _json
+                import numpy as np
+                with open(transform_json) as tf:
+                    tdata = _json.load(tf)
+                job_rot = np.array(tdata['transform_rot'])
+                job_tran = np.array(tdata['transform_tran'])
+
             panel_c = str(job_dir / "panel_c_combined.png")
             render_combined(
                 protein_pdb=protein_pdb_path,
@@ -1001,8 +1012,8 @@ def render_batch_results(
                 isomesh_level=isomesh_level,
                 ray_size=ray_size,
                 dpi=dpi,
-                transform_rot=transform_rot,
-                transform_tran=transform_tran,
+                transform_rot=job_rot,
+                transform_tran=job_tran,
             )
             result_info["panel_c"] = panel_c
 
