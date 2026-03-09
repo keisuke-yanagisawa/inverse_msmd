@@ -1168,40 +1168,40 @@ def integrated_substructure_replacement(
                 )
                 print(f"  ✓ プローブ+マップ: {panel_b}")
 
-            # 各パターンの描画
-            for result in results:
-                pat_idx = result['pattern_index']
+            # ベストパターンのみ描画（スコア降順ソート済みの先頭）
+            best = results[0]
+            pat_idx = best['pattern_index']
 
-                # タンパク質空間の視点を計算（リガンドにフォーカス）
-                protein_view = compute_protein_view(
-                    result['protein_file'],
-                    ligand_sdf=result['ligand_file'],
-                )
+            # タンパク質空間の視点を計算（リガンドにフォーカス）
+            protein_view = compute_protein_view(
+                best['protein_file'],
+                ligand_sdf=best['ligand_file'],
+            )
 
-                # 複合体図（タンパク質+リガンド）
-                panel_a = str(output_path / f"pattern_{pat_idx}_complex.png")
-                render_complex(
-                    protein_pdb=result['protein_file'],
-                    ligand_sdf=result['ligand_file'],
-                    output_png=panel_a,
+            # 複合体図（タンパク質+リガンド）
+            panel_a = str(output_path / f"pattern_{pat_idx}_complex.png")
+            render_complex(
+                protein_pdb=best['protein_file'],
+                ligand_sdf=best['ligand_file'],
+                output_png=panel_a,
+                view=protein_view,
+            )
+            print(f"  ✓ パターン {pat_idx} 複合体: {panel_a}")
+
+            # 統合図（タンパク質+リガンド+プローブ+マップ）
+            if profile_files:
+                panel_c = str(output_path / f"pattern_{pat_idx}_combined.png")
+                render_combined(
+                    protein_pdb=best['protein_file'],
+                    ligand_sdf=best['ligand_file'],
+                    probe_pdb=probe_pdb,
+                    profile_files=profile_files,
+                    output_png=panel_c,
                     view=protein_view,
+                    transform_rot=best['transform_rot'],
+                    transform_tran=best['transform_tran'],
                 )
-                print(f"  ✓ パターン {pat_idx} 複合体: {panel_a}")
-
-                # 統合図（タンパク質+リガンド+プローブ+マップ）
-                if profile_files:
-                    panel_c = str(output_path / f"pattern_{pat_idx}_combined.png")
-                    render_combined(
-                        protein_pdb=result['protein_file'],
-                        ligand_sdf=result['ligand_file'],
-                        probe_pdb=probe_pdb,
-                        profile_files=profile_files,
-                        output_png=panel_c,
-                        view=protein_view,
-                        transform_rot=result['transform_rot'],
-                        transform_tran=result['transform_tran'],
-                    )
-                    print(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
+                print(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
 
             print(f"  ✓ 3D描画完了")
         except ImportError as e:
