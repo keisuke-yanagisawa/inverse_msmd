@@ -79,38 +79,45 @@ MDトラジェクトリから、プローブ周辺の各アミノ酸残基Cβ原
 ### CLIでの実行
 
 ```bash
-# 基本的な使用法
+# exprorer_msmd出力ディレクトリを直接指定（推奨）
 python scripts/generate_profiles.py \
-    --trajectories system0/simulation/protein_probe.xtc \
-                   system1/simulation/protein_probe.xtc \
-                   system2/simulation/protein_probe.xtc \
-    --topologies   system0/prep/protein_probe.pdb \
-                   system1/prep/protein_probe.pdb \
-                   system2/prep/protein_probe.pdb \
-    --ref-probe    probe/A17/A17.pdb \
-    --probe-resname A17 \
-    --probe-id     A17 \
-    --output       profiles/A17
+    --msmd-dir /path/to/working_dir \
+    --ref-probe probe/A17/A17.pdb \
+    --probe-id A17 \
+    --output profiles/A17
 
-# 並列実行（4ジョブ）
+# exprorer_msmd出力ディレクトリ + 並列実行
+python scripts/generate_profiles.py \
+    --msmd-dir /path/to/working_dir \
+    --ref-probe probe/A17/A17.pdb \
+    --probe-id A17 \
+    --output profiles/A17 \
+    --n-jobs 4
+
+# トラジェクトリ/トポロジーを個別指定（非標準のディレクトリ構造の場合）
 python scripts/generate_profiles.py \
     --trajectories system*/simulation/protein_probe.xtc \
     --topologies   system*/prep/protein_probe.pdb \
     --ref-probe    probe/A17/A17.pdb \
-    --probe-resname A17 \
     --probe-id     A17 \
     --output       profiles/A17 \
     --n-jobs 4
 
 # 特定のアミノ酸のみ生成
 python scripts/generate_profiles.py \
-    --trajectories system*/simulation/protein_probe.xtc \
-    --topologies   system*/prep/protein_probe.pdb \
-    --ref-probe    probe/A17/A17.pdb \
-    --probe-resname A17 \
-    --probe-id     A17 \
-    --output       profiles/A17 \
+    --msmd-dir /path/to/working_dir \
+    --ref-probe probe/A17/A17.pdb \
+    --probe-id A17 \
+    --output profiles/A17 \
     --amino-acids ALA LEU VAL ILE PHE
+
+# プローブ残基名がprobe-idと異なる場合のみ--probe-resnameを指定
+python scripts/generate_profiles.py \
+    --msmd-dir /path/to/working_dir \
+    --ref-probe probe/E14/E14.pdb \
+    --probe-id E14 \
+    --probe-resname E14X \
+    --output profiles/E14
 ```
 
 ### CLIオプション一覧
@@ -121,20 +128,26 @@ python scripts/generate_profiles.py --help
 
 | オプション | 必須 | 説明 |
 |---|---|---|
-| `--trajectories` | ○ | トラジェクトリファイル (.xtc)。複数指定可 |
-| `--topologies` | ○ | トポロジーファイル (.pdb)。`--trajectories` と同数 |
+| `--msmd-dir` | ※1 | exprorer_msmd出力ディレクトリ。`--trajectories/--topologies` の代替 |
+| `--traj-pattern` | | `--msmd-dir` 使用時のトラジェクトリglob（デフォルト: `system*/simulation/*.xtc`） |
+| `--topo-pattern` | | `--msmd-dir` 使用時のトポロジーglob（デフォルト: `system*/prep/*.pdb`） |
+| `--trajectories` | ※1 | トラジェクトリファイル (.xtc)。複数指定可 |
+| `--topologies` | ※1 | トポロジーファイル (.pdb)。`--trajectories` と同数 |
 | `--ref-probe` | ○ | 参照プローブPDB |
-| `--probe-resname` | ○ | トラジェクトリ中のプローブ残基名 |
 | `--probe-id` | ○ | 出力ファイル名用のID |
+| `--probe-resname` | | トラジェクトリ中のプローブ残基名（省略時: `--probe-id` と同じ） |
 | `--output` | ○ | 出力ディレクトリ |
 | `--amino-acids` | | 対象アミノ酸（省略時: 全20種） |
 | `--n-jobs` | | 並列ジョブ数（デフォルト: 1） |
 | `--grid-size` | | グリッド座標数（デフォルト: 100） |
 | `--grid-pitch` | | グリッド間隔 Å（デフォルト: 1.0） |
+| `--eps` | | バルク正規化時のε（デフォルト: 0.1） |
 | `--no-latter-half` | | トラジェクトリ全体を使用 |
 | `--no-compress` | | gzip圧縮しない |
 | `--stop-on-error` | | エラー時に処理を中断 |
 | `-v` | | 詳細ログ |
+
+※1: `--msmd-dir` または `--trajectories`+`--topologies` のいずれか一方が必須（同時指定不可）
 
 ### 出力ファイル
 
@@ -151,17 +164,46 @@ profiles/A17/
     └── ...
 ```
 
-### パラメータの説明
+### HPC環境での個別ステップ実行
+
+大規模データでは、パイプラインを個別ステップに分割してジョブスケジューラ（qsub等）で
+並列投入するのが効率的です。
+
+#### Step 1a: 個別プロファイル生成
+
+各トラジェクトリ × 各アミノ酸の組み合わせを個別に実行:
+
+```bash
+python scripts/create_single_profile.py \
+    --trajectory system0/simulation/protein_probe.xtc \
+    --topology system0/prep/protein_probe.pdb \
+    --ref-probe probe/A17/A17.pdb \
+    --probe-resname A17 \
+    --amino-acid ALA \
+    --output-dx single_profiles/sys0_A17_ALA_environment.dx \
+    --output-bulk-cnt single_profiles/sys0_A17_ALA_bulk_cnt.txt
+```
+
+#### Step 1b+1c: 統合・正規化・圧縮
+
+全システムの個別プロファイルを統合し、バルク正規化 + gzip圧縮:
+
+```bash
+python scripts/combine_profiles.py \
+    --profile-dxs single_profiles/sys*_A17_ALA_environment.dx \
+    --bulk-cnts single_profiles/sys*_A17_ALA_bulk_cnt.txt \
+    --output profiles/A17_ALA_profile.dx \
+    --eps 0.1 \
+    --compress
+```
 
 ### 注意事項
 
-- **pytraj が必要**: `create_single_profile()` は pytraj（CPPTRAJ Python wrapper）に依存します。
+- **pytraj が必要**: `create_single_profile.py` は pytraj（CPPTRAJ Python wrapper）に依存します。
   `conda install -c conda-forge pytraj` でインストールしてください。
 - **メモリ**: 1トラジェクトリあたり数GB必要。`n_jobs` を上げすぎるとOOMになります。
 - **レジューム**: 既に存在するファイルは自動的にスキップされます。
   中断後に再実行すると未完了分から処理を再開します。
-- **HPC環境**: 大規模データではStep 1aをジョブスケジューラ（qsub等）で並列投入し、
-  完了後にStep 1b, 1cを実行するのが効率的です。
 
 ---
 
