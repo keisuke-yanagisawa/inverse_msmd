@@ -242,14 +242,51 @@ def compute_protein_view(
     )
 
 
-def _apply_view(cmd, view, zoom_target="lig", zoom_buffer=8.0):
-    """ビュー設定 + ズーム + 傾きを適用する共通ヘルパー。"""
-    if view is not None:
+def _apply_view(cmd, view=None, zoom_target="lig", zoom_buffer=8.0):
+    """リガンド原子のPCAで分散最大の視点を設定し、ズームする。
+
+    PyMOL上の "lig" オブジェクトの座標からPCAを計算し、
+    PC1(最大分散)→画面x軸、PC2→画面y軸、PC3(最小分散)→視線方向
+    とすることで、2D投影上のリガンド原子の重なりを最小化する。
+    "lig" が存在しない場合は view パラメータにフォールバックする。
+    """
+    import numpy as np
+
+    coords = cmd.get_coords("lig")
+    if coords is not None and len(coords) >= 3:
+        center = coords.mean(axis=0)
+        centered = coords - center
+        cov = np.cov(centered.T)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
+        # eigh: 固有値は昇順 → [:, 2]=最大分散, [:, 0]=最小分散
+        pc1 = eigenvectors[:, 2]   # 最大分散 → 画面x
+        pc2 = eigenvectors[:, 1]   # 中間    → 画面y
+        pc3 = eigenvectors[:, 0]   # 最小分散 → 視線方向
+
+        # 符号を安定化（各軸の最大成分が正になるよう）
+        for vec in [pc1, pc2, pc3]:
+            if vec[np.argmax(np.abs(vec))] < 0:
+                vec *= -1
+
+        # 右手座標系を保証
+        if np.dot(np.cross(pc1, pc2), pc3) < 0:
+            pc3 = -pc3
+
+        distance = 50.0
+        slab_near, slab_far = distance - 30.0, distance + 30.0
+        pca_view = (
+            pc1[0], pc1[1], pc1[2],
+            pc2[0], pc2[1], pc2[2],
+            pc3[0], pc3[1], pc3[2],
+            0.0, 0.0, -distance,
+            center[0], center[1], center[2],
+            slab_near, slab_far, -20.0,
+        )
+        cmd.set_view(pca_view)
+    elif view is not None:
         cmd.set_view(view)
+
     cmd.zoom(zoom_target, zoom_buffer)
-    # PCA視点のリガンド原子重なりを軽減する微小回転
-    cmd.turn("x", -15)
-    cmd.turn("y", 15)
 
 
 def _build_pymol_transform(rot, tran):
