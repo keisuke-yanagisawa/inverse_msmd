@@ -211,8 +211,8 @@ __marimo__/
 # Uncompressed profile files (use .dx.gz instead)
 data/profiles/*.dx
 
-# working directory
-20251024_tyk2liang/
+# working directory (yyyymmdd_* 形式)
+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/
 
 # Output directory
 output/

@@ -2,5 +2,16 @@
     "runArgs": ["--gpus", "all", "--shm-size", "8gb"],
     "name": "inverse_msmd",
     "dockerFile": "Dockerfile",
-    "postCreateCommand": "pip install -e .[dev]"
+    "mounts": [
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/root/.ssh_host,type=bind",
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/root/.gitconfig,type=bind"
+    ],
+    "postCreateCommand": "pip install -e .[dev]",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "anthropic.claude-code"
+            ]
+        }
+    }
 }
