@@ -112,6 +112,16 @@ def main():
              "profile-dirが指定されている場合のみ有効です"
     )
     parser.add_argument(
+        "--skip-steric-clash-check",
+        action="store_true",
+        help="立体障害チェックをスキップします"
+    )
+    parser.add_argument(
+        "--render-figures",
+        action="store_true",
+        help="3D構造図（PyMOL）を自動生成します"
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="詳細な出力を表示"
@@ -184,6 +194,10 @@ def main():
             print(f"画像出力      : {args.image_output}")
         if args.deduplicate_by_smiles:
             print(f"SMILES重複除去: 有効")
+        if args.skip_steric_clash_check:
+            print(f"立体障害チェック: スキップ")
+        if args.render_figures:
+            print(f"3D構造図    : 生成する")
         print("=" * 70)
         print()
     
@@ -201,6 +215,8 @@ def main():
             csv_output=args.csv_output,
             image_output=args.image_output,
             deduplicate_by_smiles=args.deduplicate_by_smiles,
+            skip_steric_clash_check=args.skip_steric_clash_check,
+            render_figures=args.render_figures,
             verbose=args.verbose
         )
         
