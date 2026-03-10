@@ -200,7 +200,8 @@ def main():
             probe_id=args.probe_id,
             csv_output=args.csv_output,
             image_output=args.image_output,
-            deduplicate_by_smiles=args.deduplicate_by_smiles
+            deduplicate_by_smiles=args.deduplicate_by_smiles,
+            verbose=args.verbose
         )
         
         # 結果のサマリーを表示

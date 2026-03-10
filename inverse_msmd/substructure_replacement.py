@@ -714,7 +714,8 @@ def integrated_substructure_replacement(
     image_output: Optional[str] = None,
     deduplicate_by_smiles: bool = False,
     skip_steric_clash_check: bool = False,
-    render_figures: bool = False
+    render_figures: bool = False,
+    verbose: bool = False
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
@@ -840,26 +841,29 @@ def integrated_substructure_replacement(
             "例: probe_id='E24'"
         )
     
+    # verbose出力用ヘルパー
+    vprint = print if verbose else lambda *a, **k: None
+
     # 出力ディレクトリを作成
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     # ファイルの読み込み
-    print(f"ファイルを読み込み中...")
+    vprint(f"ファイルを読み込み中...")
     ligand_mol = next(Chem.SDMolSupplier(ligand_file))
     protein = PDB.get_structure(protein_file)
     from_mol = read_mol_from_pdb_smi(f"{from_file}.pdb", f"{from_file}.smi")
     to_mol = read_mol_from_pdb_smi(f"{to_file}.pdb", f"{to_file}.smi")
     
-    print(f"  リガンド原子数: {ligand_mol.GetNumAtoms()}")
-    print(f"  タンパク質原子数: {len(PDB.get_attr(protein, 'coord'))}")
-    print(f"  置換前部分構造原子数: {from_mol.GetNumAtoms()}")
-    print(f"  置換後部分構造原子数: {to_mol.GetNumAtoms()}")
+    vprint(f"  リガンド原子数: {ligand_mol.GetNumAtoms()}")
+    vprint(f"  タンパク質原子数: {len(PDB.get_attr(protein, 'coord'))}")
+    vprint(f"  置換前部分構造原子数: {from_mol.GetNumAtoms()}")
+    vprint(f"  置換後部分構造原子数: {to_mol.GetNumAtoms()}")
     
     # リガンド中の部分構造を探索
-    print(f"\nリガンド中の部分構造を探索中...")
+    vprint(f"\nリガンド中の部分構造を探索中...")
     matches = find_substructure_in_ligand(ligand_mol, from_mol)
-    print(f"  マッチ数: {len(matches)}")
+    vprint(f"  マッチ数: {len(matches)}")
     
     if len(matches) == 0:
         raise ValueError("リガンド中に部分構造が見つかりませんでした")
@@ -874,27 +878,27 @@ def integrated_substructure_replacement(
                 f"有効範囲は 0 から {len(matches)-1} です"
             )
         selected_match = matches[match_index]
-        print(f"  指定されたインデックス {match_index} のマッチを使用: {selected_match}")
+        vprint(f"  指定されたインデックス {match_index} のマッチを使用: {selected_match}")
     elif len(matches) == 1:
         # 1つしかない場合は自動選択
         selected_match = matches[0]
-        print(f"  マッチが1つのみのため自動選択: {selected_match}")
+        vprint(f"  マッチが1つのみのため自動選択: {selected_match}")
     else:
         # 複数マッチがあり、インデックスが指定されていない場合
-        print(f"  複数のマッチが見つかりました。可視化画像を生成します...")
+        vprint(f"  複数のマッチが見つかりました。可視化画像を生成します...")
         vis_path = output_path / "substructure_matches.png"
         visualize_multiple_matches(ligand_mol, from_mol, matches, str(vis_path))
-        print(f"  可視化画像: {vis_path}")
+        vprint(f"  可視化画像: {vis_path}")
         
         # デフォルトで最初のマッチを使用（ユーザーは画像を見て再実行できる）
         selected_match = matches[0]
-        print(f"  警告: 最初のマッチ（インデックス0）を使用します")
-        print(f"  他のマッチを使用する場合は、match_indexパラメータを指定して再実行してください")
+        vprint(f"  警告: 最初のマッチ（インデックス0）を使用します")
+        vprint(f"  他のマッチを使用する場合は、match_indexパラメータを指定して再実行してください")
     
     # Atom matchingを実行
-    print(f"\nAtom matchingを実行中...")
+    vprint(f"\nAtom matchingを実行中...")
     atom_pair_patterns = match_substructures(from_mol, to_mol)
-    print(f"  Atom matchingパターン数: {len(atom_pair_patterns)}")
+    vprint(f"  Atom matchingパターン数: {len(atom_pair_patterns)}")
     
     if len(atom_pair_patterns) == 0:
         raise ValueError("Atom matchingに失敗しました")
@@ -918,7 +922,7 @@ def integrated_substructure_replacement(
     results = []
     clashed_patterns = []  # 立体障害でスキップされたパターンを記録
     for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
-        print(f"\nパターン {pattern_idx} を処理中...")
+        vprint(f"\nパターン {pattern_idx} を処理中...")
         
         # 1. MCS対応原子の座標を抽出
         # atom_pairs[0]はE23内のインデックス、atom_pairs[1]はE24内のインデックス
@@ -931,7 +935,7 @@ def integrated_substructure_replacement(
         e24_mcs_coords = to_coords[atom_pairs[1]]
         
         # 2. E24をリガンドに合わせる変換を計算（MCS原子のみ使用）
-        print(f"  Superimpose計算中（MCS原子: {len(atom_pairs[0])}個）...")
+        vprint(f"  Superimpose計算中（MCS原子: {len(atom_pairs[0])}個）...")
         from inverse_msmd.utils.bio_utils import SuperImposer
         si = SuperImposer()
         si.fit(e24_mcs_coords, ligand_mcs_coords)  # E24をリガンドに合わせる
@@ -943,12 +947,12 @@ def integrated_substructure_replacement(
             transformed_center = np.dot(to_center_e24_coord, rot) + tran
 
         # 3. E24は変換しない（元の座標のまま使用）
-        print(f"  E24を元の座標で使用...")
+        vprint(f"  E24を元の座標で使用...")
         import copy
         to_mol_copy = copy.deepcopy(to_no_h)
         
         # 4. リガンドの部分構造をE24で置換
-        print(f"  リガンド部分構造を置換中...")
+        vprint(f"  リガンド部分構造を置換中...")
         replaced_ligand, replacement_map = replace_ligand_substructure(
             ligand_no_h,
             selected_match,
@@ -957,7 +961,7 @@ def integrated_substructure_replacement(
         )
         
         # ステップ5-NEW: 置換部分のみ順変換（E24空間→タンパク質空間）
-        print(f"  置換部分の座標を修正中...")
+        vprint(f"  置換部分の座標を修正中...")
         final_coords = replaced_ligand.GetConformer().GetPositions().copy()
         # 非置換部分は既にタンパク質空間にある（変換不要）
         # 置換部分のみE24空間→タンパク質空間に順変換
@@ -974,20 +978,20 @@ def integrated_substructure_replacement(
                                              float(final_coords[i, 1]),
                                              float(final_coords[i, 2])))
         replaced_ligand.AddConformer(conf)
-        print(f"  ✓ {len(replacement_map)}個の原子座標を修正しました")
+        vprint(f"  ✓ {len(replacement_map)}個の原子座標を修正しました")
         
         # 7. 立体障害チェック
         if not skip_steric_clash_check:
-            print(f"  立体障害チェック中...")
+            vprint(f"  立体障害チェック中...")
             is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
             
             if not is_valid:
                 min_clash_dist = min(d for _, _, d in clashes)
-                print(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
+                vprint(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
                 for atom_i, atom_j, dist in clashes:
                     atom_i_symbol = replaced_ligand.GetAtomWithIdx(atom_i).GetSymbol()
                     atom_j_symbol = replaced_ligand.GetAtomWithIdx(atom_j).GetSymbol()
-                    print(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
+                    vprint(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
                 clashed_patterns.append({
                     'pattern_idx': pattern_idx,
                     'min_clash_dist': min_clash_dist,
@@ -998,12 +1002,12 @@ def integrated_substructure_replacement(
                     'transformed_protein': copy.deepcopy(protein),
                     'transformed_center': transformed_center if calculate_scores else None,
                 })
-                print(f"  → このパターンをスキップします")
+                vprint(f"  → このパターンをスキップします")
                 continue
             
-            print(f"  ✓ 立体障害なし")
+            vprint(f"  ✓ 立体障害なし")
         else:
-            print(f"  立体障害チェックをスキップ")
+            vprint(f"  立体障害チェックをスキップ")
         
         # ステップ8-NEW: タンパク質は元座標のまま（変換不要）
         protein_copy = copy.deepcopy(protein)
@@ -1013,7 +1017,7 @@ def integrated_substructure_replacement(
         ligand_output = output_path / f"pattern_{pattern_idx}_ligand_replaced.sdf"
         protein_output = output_path / f"pattern_{pattern_idx}_protein_aligned.pdb"
         
-        print(f"  出力中...")
+        vprint(f"  出力中...")
         # リガンドを保存
         writer = Chem.SDWriter(str(ligand_output))
         writer.SetKekulize(False)
@@ -1023,8 +1027,8 @@ def integrated_substructure_replacement(
         # タンパク質を保存
         PDB.save(transformed_protein, str(protein_output))
         
-        print(f"  ✓ リガンド: {ligand_output}")
-        print(f"  ✓ タンパク質: {protein_output}")
+        vprint(f"  ✓ リガンド: {ligand_output}")
+        vprint(f"  ✓ タンパク質: {protein_output}")
         
         # リガンドのSMILES表記を取得
         ligand_smiles = Chem.MolToSmiles(replaced_ligand)
@@ -1041,7 +1045,7 @@ def integrated_substructure_replacement(
         
         # プロファイルスコア計算（オプション）
         if calculate_scores:
-            print(f"  プロファイルスコア計算中...")
+            vprint(f"  プロファイルスコア計算中...")
             from .profile_scoring import calculate_profile_score
             
             # スコアを計算
@@ -1058,9 +1062,9 @@ def integrated_substructure_replacement(
                     inverse_tran=tran,
                 )
                 result['score'] = score
-                print(f"  ✓ スコア: {score:.2f}")
+                vprint(f"  ✓ スコア: {score:.2f}")
             except Exception as e:
-                print(f"  ⚠ 警告: スコア計算に失敗しました: {e}")
+                vprint(f"  ⚠ 警告: スコア計算に失敗しました: {e}")
                 # スコア計算失敗時もパターンは保存
         
         results.append(result)
@@ -1108,9 +1112,9 @@ def integrated_substructure_replacement(
                     inverse_rot=rot, inverse_tran=tran,
                 )
                 result['score'] = score
-                print(f"  スコア: {score:.2f} ⚠（立体障害あり、信頼性低）")
+                vprint(f"  スコア: {score:.2f} ⚠（立体障害あり、信頼性低）")
             except Exception as e:
-                print(f"  ⚠ 警告: スコア計算に失敗しました: {e}")
+                vprint(f"  ⚠ 警告: スコア計算に失敗しました: {e}")
 
         results.append(result)
 
@@ -1120,12 +1124,12 @@ def integrated_substructure_replacement(
         results_with_score = [r for r in results if 'score' in r]
         if results_with_score:
             results_with_score.sort(key=lambda x: x['score'], reverse=True)
-            print(f"\n✓ 結果をスコアで降順ソートしました")
+            vprint(f"\n✓ 結果をスコアで降順ソートしました")
             results = results_with_score
             
             # SMILES重複除去（オプション）
             if deduplicate_by_smiles:
-                print(f"\nSMILES重複除去を実行中...")
+                vprint(f"\nSMILES重複除去を実行中...")
                 seen_smiles = {}
                 unique_results = []
                 
@@ -1139,12 +1143,12 @@ def integrated_substructure_replacement(
                 
                 removed_count = len(results) - len(unique_results)
                 results = unique_results
-                print(f"  ✓ {removed_count} パターンを重複として除去しました")
-                print(f"  ✓ 残り {len(results)} パターン（ユニークなSMILES）")
+                vprint(f"  ✓ {removed_count} パターンを重複として除去しました")
+                vprint(f"  ✓ 残り {len(results)} パターン（ユニークなSMILES）")
     
     # CSV出力（オプション）
     if csv_output and results:
-        print(f"\nCSVファイルを出力中...")
+        vprint(f"\nCSVファイルを出力中...")
         csv_path = Path(csv_output)
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -1163,7 +1167,7 @@ def integrated_substructure_replacement(
                 row = {key: result.get(key, '') for key in fieldnames}
                 writer.writerow(row)
         
-        print(f"  ✓ CSV出力: {csv_path}")
+        vprint(f"  ✓ CSV出力: {csv_path}")
 
     # 画像出力（オプション）
     if image_output and results and calculate_scores:
@@ -1171,7 +1175,7 @@ def integrated_substructure_replacement(
         results_with_score = [r for r in results if 'score' in r]
         
         if results_with_score:
-            print(f"\n画像ファイルを生成中...")
+            vprint(f"\n画像ファイルを生成中...")
             from .utils.visualization_utils import draw_scored_molecules_grid
             
             # 各パターンの置換後リガンド分子を読み込み
@@ -1200,14 +1204,14 @@ def integrated_substructure_replacement(
                     max_cols=4,
                     align_molecules=True
                 )
-                print(f"  ✓ 画像出力: {image_path}")
-                print(f"  ✓ {len(molecules)} パターンの構造式を可視化しました")
+                vprint(f"  ✓ 画像出力: {image_path}")
+                vprint(f"  ✓ {len(molecules)} パターンの構造式を可視化しました")
         else:
-            print(f"  ⚠ 警告: スコア情報がないため画像を生成できませんでした")
+            vprint(f"  ⚠ 警告: スコア情報がないため画像を生成できませんでした")
     
     # 3D構造図の生成（オプション）
     if render_figures and results:
-        print(f"\n3D構造図を生成中...")
+        vprint(f"\n3D構造図を生成中...")
         try:
             from .pymol_visualization import (
                 compute_ligand_pca_view,
@@ -1230,7 +1234,7 @@ def integrated_substructure_replacement(
                     profile_files=profile_files,
                     output_png=panel_b,
                 )
-                print(f"  ✓ プローブ+マップ: {panel_b}")
+                vprint(f"  ✓ プローブ+マップ: {panel_b}")
 
             # ベストパターンのみ描画（スコア降順ソート済みの先頭）
             best = results[0]
@@ -1248,7 +1252,7 @@ def integrated_substructure_replacement(
                 view=protein_view,
                 original_ligand_sdf=ligand_file,
             )
-            print(f"  ✓ パターン {pat_idx} 複合体: {panel_a}")
+            vprint(f"  ✓ パターン {pat_idx} 複合体: {panel_a}")
 
             # 統合図（タンパク質+リガンド+プローブ+マップ）
             if profile_files:
@@ -1264,13 +1268,13 @@ def integrated_substructure_replacement(
                     transform_tran=best['transform_tran'],
                     original_ligand_sdf=ligand_file,
                 )
-                print(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
+                vprint(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
 
-            print(f"  ✓ 3D描画完了")
+            vprint(f"  ✓ 3D描画完了")
         except ImportError as e:
-            print(f"  ⚠ 警告: PyMOLが利用できないため3D描画をスキップします: {e}")
+            vprint(f"  ⚠ 警告: PyMOLが利用できないため3D描画をスキップします: {e}")
         except Exception as e:
-            print(f"  ⚠ 警告: 3D描画中にエラーが発生しました: {e}")
+            vprint(f"  ⚠ 警告: 3D描画中にエラーが発生しました: {e}")
 
     print(f"\n完了: {len(results)} パターンの結果を生成しました")
     return results
