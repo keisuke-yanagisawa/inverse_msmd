@@ -699,30 +699,31 @@ def render_complex(
     """
     cmd = _ensure_pymol()
     cmd.reinitialize()
-    _common_settings(cmd)
+    with _quiet_pymol(cmd):
+        _common_settings(cmd)
 
-    cmd.load(protein_pdb, "prot")
-    cmd.load(ligand_sdf, "lig")
-    if original_ligand_sdf:
-        cmd.load(original_ligand_sdf, "orig_lig")
-    cmd.remove("hydrogens")
+        cmd.load(protein_pdb, "prot")
+        cmd.load(ligand_sdf, "lig")
+        if original_ligand_sdf:
+            cmd.load(original_ligand_sdf, "orig_lig")
+        cmd.remove("hydrogens")
 
-    _show_protein(cmd)
-    _show_ligand(cmd)
-    if original_ligand_sdf:
-        _show_original_ligand(cmd)
+        _show_protein(cmd)
+        _show_ligand(cmd)
+        if original_ligand_sdf:
+            _show_original_ligand(cmd)
 
-    _apply_view(cmd, view, zoom_target, zoom_buffer)
+        _apply_view(cmd, view, zoom_target, zoom_buffer)
 
-    Path(output_png).parent.mkdir(parents=True, exist_ok=True)
-    cmd.ray(*ray_size)
-    cmd.png(output_png, dpi=dpi)
-    logger.info(f"Saved: {output_png}")
+        Path(output_png).parent.mkdir(parents=True, exist_ok=True)
+        cmd.ray(*ray_size)
+        cmd.png(output_png, dpi=dpi)
+        logger.info(f"Saved: {output_png}")
 
-    if save_pse:
-        pse_path = str(Path(output_png).with_suffix(".pse"))
-        cmd.save(pse_path)
-        logger.info(f"Saved: {pse_path}")
+        if save_pse:
+            pse_path = str(Path(output_png).with_suffix(".pse"))
+            cmd.save(pse_path)
+            logger.info(f"Saved: {pse_path}")
 
     return output_png
 
@@ -769,42 +770,43 @@ def render_probe_with_maps(
 
     cmd = _ensure_pymol()
     cmd.reinitialize()
-    _common_settings(cmd)
+    with _quiet_pymol(cmd):
+        _common_settings(cmd)
 
-    cmd.load(probe_pdb, "probe")
-    cmd.remove("hydrogens")
-    _show_probe(cmd)
+        cmd.load(probe_pdb, "probe")
+        cmd.remove("hydrogens")
+        _show_probe(cmd)
 
-    tmpdir = tempfile.mkdtemp()
-    try:
-        _load_profiles(cmd, profile_files, tmpdir, isomesh_level,
-                       transform_rot=transform_rot, transform_tran=transform_tran)
+        tmpdir = tempfile.mkdtemp()
+        try:
+            _load_profiles(cmd, profile_files, tmpdir, isomesh_level,
+                           transform_rot=transform_rot, transform_tran=transform_tran)
 
-        # プローブをタンパク質空間に変換（DXは_load_profiles内で変換済み）
-        if transform_rot is not None:
-            transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
-            cmd.transform_object("probe", transform_matrix)
+            # プローブをタンパク質空間に変換（DXは_load_profiles内で変換済み）
+            if transform_rot is not None:
+                transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
+                cmd.transform_object("probe", transform_matrix)
 
-        if view is not None:
-            cmd.set_view(view)
-        else:
-            # プローブ+isomesh全体が見える視点を自動計算し、斜め視点に回転
-            cmd.orient("probe")
-            cmd.zoom("probe", 4)
-            cmd.turn("x", -30)
-            cmd.turn("y", 30)
+            if view is not None:
+                cmd.set_view(view)
+            else:
+                # プローブ+isomesh全体が見える視点を自動計算し、斜め視点に回転
+                cmd.orient("probe")
+                cmd.zoom("probe", 4)
+                cmd.turn("x", -30)
+                cmd.turn("y", 30)
 
-        Path(output_png).parent.mkdir(parents=True, exist_ok=True)
-        cmd.ray(*ray_size)
-        cmd.png(output_png, dpi=dpi)
-        logger.info(f"Saved: {output_png}")
+            Path(output_png).parent.mkdir(parents=True, exist_ok=True)
+            cmd.ray(*ray_size)
+            cmd.png(output_png, dpi=dpi)
+            logger.info(f"Saved: {output_png}")
 
-        if save_pse:
-            pse_path = str(Path(output_png).with_suffix(".pse"))
-            cmd.save(pse_path)
-            logger.info(f"Saved: {pse_path}")
-    finally:
-        shutil.rmtree(tmpdir)
+            if save_pse:
+                pse_path = str(Path(output_png).with_suffix(".pse"))
+                cmd.save(pse_path)
+                logger.info(f"Saved: {pse_path}")
+        finally:
+            shutil.rmtree(tmpdir)
 
     return output_png
 
@@ -864,44 +866,45 @@ def render_combined(
 
     cmd = _ensure_pymol()
     cmd.reinitialize()
-    _common_settings(cmd)
+    with _quiet_pymol(cmd):
+        _common_settings(cmd)
 
-    cmd.load(protein_pdb, "prot")
-    cmd.load(ligand_sdf, "lig")
-    cmd.load(probe_pdb, "probe")
-    if original_ligand_sdf:
-        cmd.load(original_ligand_sdf, "orig_lig")
-    cmd.remove("hydrogens")
+        cmd.load(protein_pdb, "prot")
+        cmd.load(ligand_sdf, "lig")
+        cmd.load(probe_pdb, "probe")
+        if original_ligand_sdf:
+            cmd.load(original_ligand_sdf, "orig_lig")
+        cmd.remove("hydrogens")
 
-    _show_protein(cmd)
-    _show_ligand(cmd, stick_radius=0.15, sphere_scale=0.2)
-    _show_probe(cmd)
-    if original_ligand_sdf:
-        _show_original_ligand(cmd)
+        _show_protein(cmd)
+        _show_ligand(cmd, stick_radius=0.15, sphere_scale=0.2)
+        _show_probe(cmd)
+        if original_ligand_sdf:
+            _show_original_ligand(cmd)
 
-    tmpdir = tempfile.mkdtemp()
-    try:
-        _load_profiles(cmd, profile_files, tmpdir, isomesh_level,
-                       transform_rot=transform_rot, transform_tran=transform_tran)
+        tmpdir = tempfile.mkdtemp()
+        try:
+            _load_profiles(cmd, profile_files, tmpdir, isomesh_level,
+                           transform_rot=transform_rot, transform_tran=transform_tran)
 
-        # プローブをタンパク質空間に変換（DXは_load_profiles内で変換済み）
-        if transform_rot is not None:
-            transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
-            cmd.transform_object("probe", transform_matrix)
+            # プローブをタンパク質空間に変換（DXは_load_profiles内で変換済み）
+            if transform_rot is not None:
+                transform_matrix = _build_pymol_transform(transform_rot, transform_tran)
+                cmd.transform_object("probe", transform_matrix)
 
-        _apply_view(cmd, view, zoom_target, zoom_buffer)
+            _apply_view(cmd, view, zoom_target, zoom_buffer)
 
-        Path(output_png).parent.mkdir(parents=True, exist_ok=True)
-        cmd.ray(*ray_size)
-        cmd.png(output_png, dpi=dpi)
-        logger.info(f"Saved: {output_png}")
+            Path(output_png).parent.mkdir(parents=True, exist_ok=True)
+            cmd.ray(*ray_size)
+            cmd.png(output_png, dpi=dpi)
+            logger.info(f"Saved: {output_png}")
 
-        if save_pse:
-            pse_path = str(Path(output_png).with_suffix(".pse"))
-            cmd.save(pse_path)
-            logger.info(f"Saved: {pse_path}")
-    finally:
-        shutil.rmtree(tmpdir)
+            if save_pse:
+                pse_path = str(Path(output_png).with_suffix(".pse"))
+                cmd.save(pse_path)
+                logger.info(f"Saved: {pse_path}")
+        finally:
+            shutil.rmtree(tmpdir)
 
     return output_png
 
