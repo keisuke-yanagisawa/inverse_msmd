@@ -204,9 +204,7 @@ inverse_msmd/
 │   ├── replace_substructure.py  # 部分構造置換ツール
 │   └── add_isotope_labels.py  # アイソトープラベル付与
 ├── docs/                   # ドキュメント
-│   ├── implementation_progress.md  # 実装進捗記録
-│   ├── integrated_replacement_plan.md  # 統合機能設計
-│   └── testing_checklist.md  # テスト手順
+│   └── figures/            # README用の図
 └── tests/                  # テストスイート
     ├── conftest.py        # 共通フィクスチャ
     ├── unit/              # 単体テスト
