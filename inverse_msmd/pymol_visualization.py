@@ -33,6 +33,7 @@ import gzip
 import shutil
 import tempfile
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -41,23 +42,28 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def _ensure_pymol(verbose: bool = False):
+def _ensure_pymol():
     """PyMOLを初期化して cmd を返す（既に起動済みなら何もしない）"""
     import pymol
     from pymol import cmd
     if not hasattr(pymol, '_inverse_msmd_launched'):
         pymol.finish_launching(["pymol", "-cq"])
         pymol._inverse_msmd_launched = True
-    # DXStrToMap等の内部メッセージを抑制（verbose時のみ表示）
-    if verbose:
+    return cmd
+
+
+@contextmanager
+def _quiet_pymol(cmd):
+    """PyMOLの内部メッセージ(DXStrToMap等)を一時的に抑制するコンテキストマネージャ"""
+    cmd.feedback("disable", "executive", "everything")
+    cmd.feedback("enable", "executive", "errors")
+    cmd.feedback("disable", "objectmap", "everything")
+    cmd.feedback("enable", "objectmap", "errors")
+    try:
+        yield
+    finally:
         cmd.feedback("enable", "executive", "everything")
         cmd.feedback("enable", "objectmap", "everything")
-    else:
-        cmd.feedback("disable", "executive", "everything")
-        cmd.feedback("enable", "executive", "errors")
-        cmd.feedback("disable", "objectmap", "everything")
-        cmd.feedback("enable", "objectmap", "errors")
-    return cmd
 
 
 def compute_probe_view(
@@ -619,36 +625,37 @@ def _load_profiles(cmd, profile_files, tmpdir, isomesh_level=9.0,
         "PHE": "gray60", "TRP": "gray60", "TYR": "gray60",
     }
 
-    for aa, gz_path in profile_files.items():
-        gz_path = str(gz_path)
-        dx_path = Path(tmpdir) / f"{aa}_profile.dx"
+    with _quiet_pymol(cmd):
+        for aa, gz_path in profile_files.items():
+            gz_path = str(gz_path)
+            dx_path = Path(tmpdir) / f"{aa}_profile.dx"
 
-        with gzip.open(gz_path, "rb") as f_in:
-            with open(str(dx_path), "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+            with gzip.open(gz_path, "rb") as f_in:
+                with open(str(dx_path), "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
 
-        # DXデータをタンパク質空間に再サンプリング（指定時）
-        # プローブPDBとDXグリッドは同じ座標空間で生成されているため、
-        # プローブと同じ変換行列をそのまま適用する
-        if transform_rot is not None:
-            dx_transformed = Path(tmpdir) / f"{aa}_profile_transformed.dx"
-            _resample_dx_file(str(dx_path), str(dx_transformed), transform_rot, transform_tran)
-            dx_path = dx_transformed
+            # DXデータをタンパク質空間に再サンプリング（指定時）
+            # プローブPDBとDXグリッドは同じ座標空間で生成されているため、
+            # プローブと同じ変換行列をそのまま適用する
+            if transform_rot is not None:
+                dx_transformed = Path(tmpdir) / f"{aa}_profile_transformed.dx"
+                _resample_dx_file(str(dx_path), str(dx_transformed), transform_rot, transform_tran)
+                dx_path = dx_transformed
 
-        obj_name = f"profile_{aa.lower()}"
-        cmd.load(str(dx_path), obj_name)
+            obj_name = f"profile_{aa.lower()}"
+            cmd.load(str(dx_path), obj_name)
 
-        # PyMOL fails to create map objects from DX files containing inf values
-        if obj_name not in cmd.get_names("objects"):
-            logger.warning(f"プロファイル {aa} の読み込みに失敗（データにinfが含まれている可能性）、スキップ")
-            continue
+            # PyMOL fails to create map objects from DX files containing inf values
+            if obj_name not in cmd.get_names("objects"):
+                logger.warning(f"プロファイル {aa} の読み込みに失敗（データにinfが含まれている可能性）、スキップ")
+                continue
 
-        mesh_name = f"map_{aa.lower()}"
-        cmd.isomesh(mesh_name, obj_name, level=isomesh_level)
-        color = default_colors.get(aa.upper(), "gray50")
-        cmd.color(color, mesh_name)
-        cmd.set("mesh_color", color, mesh_name)
-        cmd.set("transparency", 0.4, mesh_name)
+            mesh_name = f"map_{aa.lower()}"
+            cmd.isomesh(mesh_name, obj_name, level=isomesh_level)
+            color = default_colors.get(aa.upper(), "gray50")
+            cmd.color(color, mesh_name)
+            cmd.set("mesh_color", color, mesh_name)
+            cmd.set("transparency", 0.4, mesh_name)
 
 
 def render_complex(
