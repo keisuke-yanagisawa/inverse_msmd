@@ -1248,8 +1248,8 @@ def integrated_substructure_replacement(
             best = results[0]
             pat_idx = best['pattern_index']
 
-            # リガンドPCAで視点を計算（原子分散最大化）
-            protein_view = compute_ligand_pca_view(best['ligand_file'])
+            # 元の複合体リガンドのPCAで視点を計算（原子分散最大化）
+            protein_view = compute_ligand_pca_view(ligand_file)
 
             # 複合体図（タンパク質+リガンド）
             panel_a = str(output_path / f"pattern_{pat_idx}_complex.png")
