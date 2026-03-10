@@ -19,10 +19,21 @@
 - **バッチ処理**: 複数の置換パターンを並列処理し、スコアリング・3D描画まで自動実行
 - **3D構造描画**: PyMOLによるタンパク質-リガンド複合体、プローブマップの自動描画
 
-## インストール
+## 実行環境
+
+**VS Code + Dev Containers** を想定しています。GPUが利用可能なDocker環境で、リポジトリを開くだけで依存関係が自動インストールされます。
 
 ```bash
+# 1. リポジトリをクローン
 git clone https://github.com/keisuke-yanagisawa/inverse_msmd.git
+
+# 2. VS Code で開き、「Reopen in Container」を実行
+#    → Dockerfile に基づくコンテナが起動し、pip install -e .[dev] が自動実行されます
+```
+
+Dev Containersを使わない場合は、手動でセットアップしてください：
+
+```bash
 cd inverse_msmd
 pip install -e .[dev]
 ```
