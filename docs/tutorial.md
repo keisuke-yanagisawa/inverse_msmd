@@ -92,6 +92,17 @@ job_id,from_probe,to_probe,match_index,comment,enabled
 1-03,A38,A17,0,A38→A17,yes
 ```
 
+| 列名 | 必須 | 説明 |
+|------|------|------|
+| `job_id` | ✓ | ジョブの一意識別子。出力ディレクトリ名に使用される |
+| `from_probe` | ✓ | 置換前のプローブID。`--probe-dir` 内の `{ID}.pdb` / `{ID}.smi` を参照 |
+| `to_probe` | ✓ | 置換後のプローブID。同上 |
+| `match_index` | ✓ | MCSマッチの位置インデックス（0始まり）。リガンド中に同一部分構造が複数ある場合に区別する |
+| `comment` | | メモ（処理には影響しない） |
+| `enabled` | | `yes`（デフォルト）/ `no`。`no` にするとそのジョブをスキップ |
+
+`from_probe` と `to_probe` には、`--probe-dir` に配置されたプローブ分子のID（拡張子なし）を指定します。各プローブには `.pdb`（3D座標）と `.smi`（SMILES）の2ファイルが必要です。
+
 ### バッチ出力構造
 
 ```
