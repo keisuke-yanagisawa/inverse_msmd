@@ -991,17 +991,20 @@ def render_batch_results(
     # Panel B（プローブ+マップ）は全ジョブ共通なので1回だけ描画
     panel_b_path = str(output_path / "panel_b_probe_map.png")
     if profile_files:
-        render_probe_with_maps(
-            probe_pdb=probe_pdb,
-            profile_files=profile_files,
-            output_png=panel_b_path,
-            view=view,
-            isomesh_level=isomesh_level,
-            ray_size=ray_size,
-            dpi=dpi,
-            transform_rot=transform_rot,
-            transform_tran=transform_tran,
-        )
+        if Path(panel_b_path).exists():
+            logger.info(f"Panel B: 描画済み、スキップ")
+        else:
+            render_probe_with_maps(
+                probe_pdb=probe_pdb,
+                profile_files=profile_files,
+                output_png=panel_b_path,
+                view=view,
+                isomesh_level=isomesh_level,
+                ray_size=ray_size,
+                dpi=dpi,
+                transform_rot=transform_rot,
+                transform_tran=transform_tran,
+            )
     else:
         panel_b_path = None
 
@@ -1027,12 +1030,25 @@ def render_batch_results(
             logger.warning(f"ジョブ {job_id}: pattern_{best_pattern} のファイルが不完全です")
             continue
 
+        # 既存PNGのスキップチェック
+        panel_a = str(job_dir / "panel_a_complex.png")
+        panel_c = str(job_dir / "panel_c_combined.png") if profile_files else None
+        if Path(panel_a).exists() and (panel_c is None or Path(panel_c).exists()):
+            logger.info(f"ジョブ {job_id}: 描画済み、スキップ")
+            result_info = {
+                "job_id": job_id, "pattern_index": best_pattern,
+                "panel_a": panel_a, "panel_b": panel_b_path,
+            }
+            if panel_c:
+                result_info["panel_c"] = panel_c
+            results.append(result_info)
+            continue
+
         logger.info(f"ジョブ {job_id} (pattern {best_pattern}) を描画中...")
 
         result_info = {"job_id": job_id, "pattern_index": best_pattern}
 
         # Panel A: 複合体
-        panel_a = str(job_dir / "panel_a_complex.png")
         render_complex(
             protein_pdb=protein_pdb_path,
             ligand_sdf=ligand_sdf_path,
