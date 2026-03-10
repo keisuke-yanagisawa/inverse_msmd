@@ -40,10 +40,6 @@ python scripts/run_batch.py \
 **入力**: タンパク質PDB + リガンドSDF + プローブ分子ペア（置換前/後）
 **出力**: 置換後リガンドSDF + 変換済みタンパク質PDB + スコア
 
-### 同梱プローブ分子
-
-<img src="docs/figures/probe_molecules.png" width="600" alt="プローブ分子一覧: A01, A08, E23, E24">
-
 ---
 
 ## 概要
