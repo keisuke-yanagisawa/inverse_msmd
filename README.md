@@ -52,13 +52,11 @@ python scripts/run_batch.py \
 
 ## 特徴
 
-- **統合アライメントAPI**: 原子マッチングと構造重ね合わせを一括で実行する統合API
-- **構造重ね合わせ**: BioPythonベースの構造重ね合わせ（scikit-learn互換インターフェース）
+- **統合部分構造置換**: リガンドの部分構造置換とタンパク質座標変換を統合
+- **構造重ね合わせ**: BioPythonベースの構造重ね合わせ
 - **原子マッチング**: MCS（最大共通部分構造）ベースの原子ペア検出（アイソトープラベル対応）
-- **統合部分構造置換** ✅: リガンドの部分構造置換とタンパク質座標変換を統合
-- **PDB操作**: PDBファイルの読み込み、属性の取得・設定、保存機能
-- **空間計算**: 球体の体積推定などの空間計算ユーティリティ
-- **パス処理**: 環境変数とチルダ展開に対応したパス処理
+- **バッチ処理**: 複数の置換パターンを一括処理し、スコアリング・3D描画まで自動実行
+- **3D構造描画**: PyMOLによるタンパク質-リガンド複合体、プローブマップの描画
 
 ## インストール
 
@@ -99,61 +97,15 @@ pip install .[dev]
 
 ## 使い方
 
-### 統合アライメントAPI（推奨）
+### 統合部分構造置換
 
-統合APIを使用すると、原子マッチングと構造重ね合わせを一括で実行できます：
-
-```python
-from inverse_msmd import align_structures
-
-# プローブ分子とリガンドのマッチングに基づいてタンパク質を重ね合わせ
-results = align_structures(
-    protein_file="data/sample_proteins/4hw3_A.pdb",
-    ligand_file="data/atom_matching/4hw3_A_lig.sdf",
-    probe_files={
-        "A08": "data/sample_probes/A08.pdb",
-        "E24": "data/sample_probes/E24.pdb"
-    },
-    output_dir="./aligned_structures"
-)
-
-# 結果の確認
-for result in results:
-    print(f"{result.probe_id}_{result.match_id}: "
-          f"{result.atom_pairs.shape[1]} 個の原子がマッチ")
-```
-
-### 統合部分構造置換API
-
-リガンドの部分構造を別の部分構造で置換し、タンパク質構造も適切に座標変換します：
-
-```python
-from inverse_msmd.substructure_replacement import integrated_substructure_replacement
-
-# E23をE24に置換
-results = integrated_substructure_replacement(
-    ligand_file="data/atom_matching/4hw3_A_lig.sdf",
-    protein_file="data/sample_proteins/4hw3_A.pdb",
-    from_file="data/sample_probes/E23",  # 拡張子なし
-    to_file="data/sample_probes/E24",    # 拡張子なし
-    output_dir="output/integrated/",
-    match_index=0  # オプション: 特定のマッチを指定
-)
-
-# 結果の確認
-for i, result in enumerate(results):
-    print(f"パターン {i}:")
-    print(f"  リガンド: {result['ligand_file']}")
+リガンドの部分構造を別の部分構造で置換し、タンパク質構造も適切に座標変換します。
 
 **重要な仕様**:
 - MCS（最大共通部分構造）ベースの正確な重ね合わせ（RMSD < 0.1 Å）
 - `ringMatchesRingOnly=True`により、芳香環が正確に重なります
 - リガンドとタンパク質の元の座標系を保持します
 - **立体障害の自動検出**: 置換後に原子間距離が2.0Å未満の構造を自動的に除外
-    print(f"  タンパク質: {result['protein_file']}")
-```
-
-**CLIからの使用:**
 
 ```bash
 # 基本的な使用方法
@@ -202,39 +154,6 @@ ls output/integrated/*.sdf | wc -l
 
 # ファイル一覧を表示
 ls -lh output/integrated/
-```
-
-### 低レベルAPI
-
-より細かい制御が必要な場合は、低レベルAPIを使用できます：
-
-```python
-from inverse_msmd import SuperImposer, PDB
-import numpy as np
-
-# PDBファイルを読み込み
-protein = PDB.get_structure("protein.pdb")
-probe = PDB.get_structure("probe.pdb")
-
-# 座標を取得
-protein_coords = PDB.get_attr(protein, "coord")
-probe_coords = PDB.get_attr(probe, "coord")
-
-# 原子ペアに基づいて座標を選択
-atom_pairs = np.loadtxt("atom_matching.txt", int)
-probe_coords_target = probe_coords[atom_pairs[0]]
-protein_coords_target = protein_coords[atom_pairs[1]]
-
-# 構造を重ね合わせ
-si = SuperImposer()
-si.fit(protein_coords_target, probe_coords_target)
-
-# 変換後の座標を設定
-transformed_coords = si.transform(protein_coords)
-PDB.set_attr(protein, "coord", transformed_coords)
-
-# 結果を保存
-PDB.save(protein, "aligned_protein.pdb")
 ```
 
 ### サンプルスクリプト
@@ -294,144 +213,6 @@ inverse_msmd/
     ├── integration/       # 統合テスト
     └── data/              # テストデータ（最小限）
 ```
-
-## API リファレンス
-
-### アライメントモジュール
-
-#### align_structures()
-
-プローブ分子とリガンドのマッチングに基づいてタンパク質を重ね合わせる統合関数（推奨）
-
-```python
-align_structures(protein_file, ligand_file, probe_files, output_dir, iso_value=1)
-```
-
-**パラメータ:**
-- `protein_file` (str): タンパク質PDBファイルのパス
-- `ligand_file` (str): 共結晶化リガンドSDFファイルのパス  
-- `probe_files` (str | list | dict): プローブPDBファイル
-  - str: 単一プローブのパス
-  - list: プローブパスのリスト
-  - dict: `{probe_id: filepath}` の辞書
-- `output_dir` (str): 出力ディレクトリのパス
-- `iso_value` (int): アイソトープラベル値（デフォルト: 1）
-
-**戻り値:** `List[AlignmentResult]` - 重ね合わせ結果のリスト
-
-#### AlignmentResult
-
-重ね合わせ結果を保持するデータクラス
-
-**属性:**
-- `probe_id` (str): プローブ分子のID
-- `match_id` (int): マッチングID
-- `aligned_protein` (Structure): 重ね合わせ後のタンパク質構造
-- `atom_pairs` (np.ndarray): 原子ペアのインデックス配列
-
-#### find_atom_matches()
-
-プローブとリファレンス分子間のMCS検索と原子ペアマッチングを実行
-
-```python
-find_atom_matches(probe_mol, ref_mol, iso_value=1)
-```
-
-**パラメータ:**
-- `probe_mol` (Chem.Mol): プローブ分子（RDKit Mol）
-- `ref_mol` (Chem.Mol): リファレンス分子
-- `iso_value` (int): アイソトープラベル値（デフォルト: 1）
-
-**戻り値:** `List[np.ndarray]` - 原子ペアマッチングのリスト
-
-#### align_structure()
-
-原子ペアに基づいてタンパク質構造を重ね合わせ
-
-```python
-align_structure(protein, ligand_coords, probe_coords, atom_pairs)
-```
-
-**パラメータ:**
-- `protein` (Structure): タンパク質構造（BioPython Structure）
-- `ligand_coords` (np.ndarray): リガンド座標
-- `probe_coords` (np.ndarray): プローブ座標
-- `atom_pairs` (np.ndarray): 原子ペア配列
-
-**戻り値:** `Structure` - 重ね合わせ後の構造
-
-### SuperImposer
-
-構造重ね合わせクラス（scikit-learn互換インターフェース）
-
-**メソッド:**
-- `fit(coords, reference_coords)`: 重ね合わせパラメータを計算
-- `transform(coords)`: 座標を変換
-- `inverse_transform(coords)`: 逆変換を実行
-
-**使用例:**
-```python
-si = SuperImposer()
-si.fit(moving_coords, target_coords)
-transformed = si.transform(coords_to_move)
-```
-
-### PDB
-
-PDB構造操作のためのユーティリティ関数
-
-**主要関数:**
-- `get_structure(filepath)`: PDBファイルを読み込み
-- `get_attr(model, attr, sele=None)`: 属性を取得
-- `set_attr(model, attr, lst, sele=None)`: 属性を設定
-- `save(structs, path)`: 構造をPDBファイルに保存
-
-**使用例:**
-```python
-from inverse_msmd import PDB
-
-# 読み込み
-protein = PDB.get_structure("protein.pdb")
-
-# 座標取得
-coords = PDB.get_attr(protein, "coord")
-
-# 座標設定
-PDB.set_attr(protein, "coord", new_coords)
-
-# 保存
-PDB.save(protein, "output.pdb")
-```
-
-### その他のユーティリティ
-
-#### estimate_volume()
-
-球体の集合の体積を推定
-
-```python
-estimate_volume(points, radii, granularity=10)
-```
-
-**パラメータ:**
-- `points` (array-like): 点の座標リスト
-- `radii` (array-like): 各球の半径
-- `granularity` (int): グリッドの粒度（デフォルト: 10）
-
-**戻り値:** `float` - 推定体積
-
-#### expandpath()
-
-環境変数とチルダを展開したパスを返す
-
-```python
-expandpath(path)
-```
-
-**パラメータ:**
-- `path` (str): 展開するパス文字列
-
-**戻り値:** `str` - 展開されたパス
 
 ## ライセンス
 
