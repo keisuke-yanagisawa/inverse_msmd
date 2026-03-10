@@ -1240,6 +1240,7 @@ def integrated_substructure_replacement(
                 ligand_sdf=best['ligand_file'],
                 output_png=panel_a,
                 view=protein_view,
+                original_ligand_sdf=ligand_file,
             )
             print(f"  ✓ パターン {pat_idx} 複合体: {panel_a}")
 
@@ -1255,6 +1256,7 @@ def integrated_substructure_replacement(
                     view=protein_view,
                     transform_rot=best['transform_rot'],
                     transform_tran=best['transform_tran'],
+                    original_ligand_sdf=ligand_file,
                 )
                 print(f"  ✓ パターン {pat_idx} 統合図: {panel_c}")
 

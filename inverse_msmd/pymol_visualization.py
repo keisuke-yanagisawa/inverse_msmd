@@ -440,6 +440,21 @@ def _show_ligand(cmd, obj_name="lig", stick_radius=0.2, sphere_scale=0.25):
     cmd.set("sphere_scale", sphere_scale, obj_name)
 
 
+def _show_original_ligand(cmd, obj_name="orig_lig", stick_radius=0.12, sphere_scale=0.15):
+    """元リガンドの表示設定（シアン、細めのスティック）"""
+    cmd.show("sticks", obj_name)
+    cmd.color("cyan", f"{obj_name} and elem C")
+    cmd.color("red", f"{obj_name} and elem O")
+    cmd.color("blue", f"{obj_name} and elem N")
+    cmd.color("yellow", f"{obj_name} and elem S")
+    cmd.color("splitpea", f"{obj_name} and elem Cl")
+    cmd.set("stick_radius", stick_radius, obj_name)
+    cmd.show("spheres", obj_name)
+    cmd.set("sphere_scale", sphere_scale, obj_name)
+    cmd.set("stick_transparency", 0.3, obj_name)
+    cmd.set("sphere_transparency", 0.3, obj_name)
+
+
 def _show_probe(cmd, obj_name="probe", stick_radius=0.2, sphere_scale=0.3):
     """プローブの表示設定"""
     cmd.show("sticks", obj_name)
@@ -637,6 +652,7 @@ def render_complex(
     save_pse: bool = False,
     zoom_target: str = "lig",
     zoom_buffer: float = 8.0,
+    original_ligand_sdf: Optional[str] = None,
 ) -> str:
     """
     タンパク質-リガンド複合体を描画します。
@@ -671,10 +687,14 @@ def render_complex(
 
     cmd.load(protein_pdb, "prot")
     cmd.load(ligand_sdf, "lig")
+    if original_ligand_sdf:
+        cmd.load(original_ligand_sdf, "orig_lig")
     cmd.remove("hydrogens")
 
     _show_protein(cmd)
     _show_ligand(cmd)
+    if original_ligand_sdf:
+        _show_original_ligand(cmd)
 
     _apply_view(cmd, view, zoom_target, zoom_buffer)
 
@@ -788,6 +808,7 @@ def render_combined(
     save_pse: bool = False,
     zoom_target: str = "lig",
     zoom_buffer: float = 8.0,
+    original_ligand_sdf: Optional[str] = None,
 ) -> str:
     """
     統合図（タンパク質+リガンド+プローブ+プロファイルマップ）を描画します。
@@ -832,11 +853,15 @@ def render_combined(
     cmd.load(protein_pdb, "prot")
     cmd.load(ligand_sdf, "lig")
     cmd.load(probe_pdb, "probe")
+    if original_ligand_sdf:
+        cmd.load(original_ligand_sdf, "orig_lig")
     cmd.remove("hydrogens")
 
     _show_protein(cmd)
     _show_ligand(cmd, stick_radius=0.15, sphere_scale=0.2)
     _show_probe(cmd)
+    if original_ligand_sdf:
+        _show_original_ligand(cmd)
 
     tmpdir = tempfile.mkdtemp()
     try:
@@ -910,6 +935,7 @@ def render_batch_results(
     view: Optional[Tuple[float, ...]] = None,
     protein_view: Optional[Tuple[float, ...]] = None,
     isomesh_level: Optional[float] = None,
+    original_ligand_sdf: Optional[str] = None,
     ray_size: Tuple[int, int] = (800, 800),
     dpi: int = 150,
     job_ids: Optional[List[str]] = None,
@@ -1056,6 +1082,7 @@ def render_batch_results(
             view=protein_view,
             ray_size=ray_size,
             dpi=dpi,
+            original_ligand_sdf=original_ligand_sdf,
         )
         result_info["panel_a"] = panel_a
 
@@ -1082,6 +1109,7 @@ def render_batch_results(
                 dpi=dpi,
                 transform_rot=job_rot,
                 transform_tran=job_tran,
+                original_ligand_sdf=original_ligand_sdf,
             )
             result_info["panel_c"] = panel_c
 

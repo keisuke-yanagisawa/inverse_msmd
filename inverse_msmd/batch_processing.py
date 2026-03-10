@@ -895,6 +895,7 @@ def run_batch_processing(
                         job_ids=job_id_list,
                         job_transforms=job_transforms,
                         protein_view=shared_view,
+                        original_ligand_sdf=ligand_file,
                     )
                 except Exception as e:
                     logger.warning(f"プローブ {to_probe} の描画中にエラー: {e}")
