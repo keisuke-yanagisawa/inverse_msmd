@@ -1,7 +1,7 @@
 """
 バッチ処理モジュール
 
-複数の置換パターン（from_probe, to_probe, match_index）に対して、
+複数の置換パターン（from_probe, to_probe）に対して、
 matching scoreを一括計算するバッチ処理機能を提供します。
 
 主要機能:
@@ -53,8 +53,8 @@ class BatchJob:
         置換前プローブID（例: "E23"）
     to_probe : str
         置換後プローブID（例: "E24"）
-    match_index : int
-        置換位置インデックス（0始まり）
+    match_index : Optional[int]
+        置換位置インデックス（0始まり）。Noneの場合は全マッチを試行し最良スコアを選択
     comment : Optional[str]
         説明（オプション、ログ出力に使用）
     enabled : bool
@@ -81,15 +81,15 @@ class BatchJob:
     job_id: str
     from_probe: str
     to_probe: str
-    match_index: int
+    match_index: Optional[int] = None
     comment: Optional[str] = None
     enabled: bool = True
-    
+
     def __post_init__(self):
         """バリデーション"""
         if not self.job_id or not self.job_id.strip():
             raise ValueError("job_idは空にできません")
-        if self.match_index < 0:
+        if self.match_index is not None and self.match_index < 0:
             raise ValueError("match_indexは0以上である必要があります")
 
 
@@ -106,8 +106,8 @@ class JobResult:
         置換前プローブID
     to_probe : str
         置換後プローブID
-    match_index : int
-        置換位置インデックス
+    match_index : Optional[int]
+        置換位置インデックス（Noneの場合は自動選択）
     status : str
         実行ステータス（"success", "failed", "skipped"）
     num_patterns : int
@@ -132,7 +132,7 @@ class JobResult:
     job_id: str
     from_probe: str
     to_probe: str
-    match_index: int
+    match_index: Optional[int]
     status: str  # "success", "failed", "skipped"
     
     # 成功時の情報
@@ -260,8 +260,8 @@ def load_batch_config(
     
     Notes
     -----
-    必須列: job_id, from_probe, to_probe, match_index
-    オプション列: comment, enabled
+    必須列: job_id, from_probe, to_probe
+    オプション列: match_index, comment, enabled
     
     enabled列が'no'、'false'、'0'の場合、そのジョブのenabledはFalseになります
     
@@ -283,7 +283,7 @@ def load_batch_config(
         reader = csv.DictReader(f)
         
         # 必須列チェック
-        required_columns = {'job_id', 'from_probe', 'to_probe', 'match_index'}
+        required_columns = {'job_id', 'from_probe', 'to_probe'}
         if not required_columns.issubset(reader.fieldnames):
             missing = required_columns - set(reader.fieldnames)
             raise ValueError(
@@ -298,11 +298,13 @@ def load_batch_config(
             
             # BatchJobオブジェクトを作成
             try:
+                match_index_str = row.get('match_index', '').strip()
+                match_index = int(match_index_str) if match_index_str else None
                 job = BatchJob(
                     job_id=row['job_id'].strip(),
                     from_probe=row['from_probe'].strip(),
                     to_probe=row['to_probe'].strip(),
-                    match_index=int(row['match_index']),
+                    match_index=match_index,
                     comment=row.get('comment', '').strip() or None,
                     enabled=enabled
                 )
