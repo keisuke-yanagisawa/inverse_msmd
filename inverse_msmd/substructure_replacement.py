@@ -916,6 +916,7 @@ def integrated_substructure_replacement(
     
     # 各atom matchingパターンについて処理
     results = []
+    clashed_patterns = []  # 立体障害でスキップされたパターンを記録
     for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
         print(f"\nパターン {pattern_idx} を処理中...")
         
@@ -981,11 +982,22 @@ def integrated_substructure_replacement(
             is_valid, clashes = check_steric_clash(replaced_ligand, min_distance=2.0)
             
             if not is_valid:
+                min_clash_dist = min(d for _, _, d in clashes)
                 print(f"  ⚠ 警告: 立体障害を検出しました（{len(clashes)}箇所）")
                 for atom_i, atom_j, dist in clashes:
                     atom_i_symbol = replaced_ligand.GetAtomWithIdx(atom_i).GetSymbol()
                     atom_j_symbol = replaced_ligand.GetAtomWithIdx(atom_j).GetSymbol()
                     print(f"    原子{atom_i}({atom_i_symbol}) - 原子{atom_j}({atom_j_symbol}): {dist:.3f}Å")
+                clashed_patterns.append({
+                    'pattern_idx': pattern_idx,
+                    'min_clash_dist': min_clash_dist,
+                    'clashes': clashes,
+                    'replaced_ligand': replaced_ligand,
+                    'rot': rot,
+                    'tran': tran,
+                    'transformed_protein': copy.deepcopy(protein),
+                    'transformed_center': transformed_center if calculate_scores else None,
+                })
                 print(f"  → このパターンをスキップします")
                 continue
             
@@ -1047,7 +1059,55 @@ def integrated_substructure_replacement(
                 # スコア計算失敗時もパターンは保存
         
         results.append(result)
-    
+
+    # 全パターンが立体障害でスキップされた場合、最も衝突距離が遠いものを採用
+    if not results and clashed_patterns:
+        best_clash = max(clashed_patterns, key=lambda x: x['min_clash_dist'])
+        pat_idx = best_clash['pattern_idx']
+        print(f"\n⚠ 警告: 全パターンが立体障害でスキップされました。")
+        print(f"  最も衝突距離が遠いパターン {pat_idx}（最小衝突距離: {best_clash['min_clash_dist']:.3f}Å）を採用します。")
+        print(f"  ⚠ このパターンのスコアは信頼性が低い可能性があります。")
+
+        replaced_ligand = best_clash['replaced_ligand']
+        rot = best_clash['rot']
+        tran = best_clash['tran']
+        transformed_protein = best_clash['transformed_protein']
+        transformed_center = best_clash['transformed_center']
+
+        ligand_output = output_path / f"pattern_{pat_idx}_ligand_replaced.sdf"
+        protein_output = output_path / f"pattern_{pat_idx}_protein_aligned.pdb"
+        writer = Chem.SDWriter(str(ligand_output))
+        writer.SetKekulize(False)
+        writer.write(replaced_ligand)
+        writer.close()
+        PDB.save(transformed_protein, str(protein_output))
+
+        ligand_smiles = Chem.MolToSmiles(replaced_ligand)
+        result = {
+            'ligand_file': str(ligand_output),
+            'protein_file': str(protein_output),
+            'pattern_index': pat_idx,
+            'ligand_smiles': ligand_smiles,
+            'transform_rot': rot,
+            'transform_tran': tran,
+            'steric_clash_warning': True,
+            'min_clash_distance': best_clash['min_clash_dist'],
+        }
+
+        if calculate_scores:
+            from .profile_scoring import calculate_profile_score
+            try:
+                score = calculate_profile_score(
+                    transformed_protein, transformed_center,
+                    profile_dir, probe_id
+                )
+                result['score'] = score
+                print(f"  スコア: {score:.2f} ⚠（立体障害あり、信頼性低）")
+            except Exception as e:
+                print(f"  ⚠ 警告: スコア計算に失敗しました: {e}")
+
+        results.append(result)
+
     # スコア計算時は降順ソート
     if calculate_scores and results:
         # スコアがあるもののみソート
