@@ -41,13 +41,22 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def _ensure_pymol():
+def _ensure_pymol(verbose: bool = False):
     """PyMOLを初期化して cmd を返す（既に起動済みなら何もしない）"""
     import pymol
     from pymol import cmd
     if not hasattr(pymol, '_inverse_msmd_launched'):
         pymol.finish_launching(["pymol", "-cq"])
         pymol._inverse_msmd_launched = True
+    # DXStrToMap等の内部メッセージを抑制（verbose時のみ表示）
+    if verbose:
+        cmd.feedback("enable", "executive", "everything")
+        cmd.feedback("enable", "objectmap", "everything")
+    else:
+        cmd.feedback("disable", "executive", "everything")
+        cmd.feedback("enable", "executive", "errors")
+        cmd.feedback("disable", "objectmap", "everything")
+        cmd.feedback("enable", "objectmap", "errors")
     return cmd
 
 
