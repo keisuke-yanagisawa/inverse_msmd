@@ -919,9 +919,14 @@ def integrated_substructure_replacement(
         to_center_e24 = to_no_h.GetConformer().GetPositions().mean(axis=0)
     
     # 各atom matchingパターンについて処理
+    n_patterns = len(atom_pair_patterns)
+    if n_patterns > 1:
+        print(f"重ね合わせパターン: {n_patterns} 件")
     results = []
     clashed_patterns = []  # 立体障害でスキップされたパターンを記録
     for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
+        if n_patterns > 1 and not verbose:
+            print(f"\r  処理中: {pattern_idx + 1}/{n_patterns}", end="", flush=True)
         vprint(f"\nパターン {pattern_idx} を処理中...")
         
         # 1. MCS対応原子の座標を抽出
@@ -1068,6 +1073,9 @@ def integrated_substructure_replacement(
                 # スコア計算失敗時もパターンは保存
         
         results.append(result)
+
+    if n_patterns > 1 and not verbose:
+        print()  # 進捗表示の改行
 
     # 全パターンが立体障害でスキップされた場合、最も衝突距離が遠いものを採用
     if not results and clashed_patterns:
