@@ -543,7 +543,8 @@ def process_single_job(
             probe_id=job.to_probe,
             csv_output=csv_output,
             deduplicate_by_smiles=True,  # 異なるSMILESのパターンをすべて保持
-            skip_steric_clash_check=skip_steric_clash_check
+            skip_steric_clash_check=skip_steric_clash_check,
+            quiet=True
         )
         
         # 結果を更新

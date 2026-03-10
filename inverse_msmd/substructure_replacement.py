@@ -715,7 +715,8 @@ def integrated_substructure_replacement(
     deduplicate_by_smiles: bool = False,
     skip_steric_clash_check: bool = False,
     render_figures: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    quiet: bool = False
 ) -> List[Dict[str, Union[str, float, int]]]:
     """
     統合部分構造置換ワークフローを実行します。
@@ -842,7 +843,10 @@ def integrated_substructure_replacement(
         )
     
     # verbose出力用ヘルパー
-    vprint = print if verbose else lambda *a, **k: None
+    _noop = lambda *a, **k: None
+    vprint = print if verbose else _noop
+    # quiet=Trueの場合、全ての標準出力を抑制（バッチ並列実行時用）
+    qprint = _noop if quiet else print
 
     # 出力ディレクトリを作成
     output_path = Path(output_dir)
@@ -921,12 +925,12 @@ def integrated_substructure_replacement(
     # 各atom matchingパターンについて処理
     n_patterns = len(atom_pair_patterns)
     if n_patterns > 1:
-        print(f"重ね合わせパターン: {n_patterns} 件")
+        qprint(f"重ね合わせパターン: {n_patterns} 件")
     results = []
     clashed_patterns = []  # 立体障害でスキップされたパターンを記録
     for pattern_idx, atom_pairs in enumerate(atom_pair_patterns):
         if n_patterns > 1 and not verbose:
-            print(f"\r  処理中: {pattern_idx + 1}/{n_patterns}", end="", flush=True)
+            qprint(f"\r  処理中: {pattern_idx + 1}/{n_patterns}", end="", flush=True)
         vprint(f"\nパターン {pattern_idx} を処理中...")
         
         # 1. MCS対応原子の座標を抽出
@@ -1018,34 +1022,17 @@ def integrated_substructure_replacement(
         protein_copy = copy.deepcopy(protein)
         transformed_protein = protein_copy
         
-        # 9. ファイルを出力
-        ligand_output = output_path / f"pattern_{pattern_idx}_ligand_replaced.sdf"
-        protein_output = output_path / f"pattern_{pattern_idx}_protein_aligned.pdb"
-        
-        vprint(f"  出力中...")
-        # リガンドを保存
-        writer = Chem.SDWriter(str(ligand_output))
-        writer.SetKekulize(False)
-        writer.write(replaced_ligand)
-        writer.close()
-        
-        # タンパク質を保存
-        PDB.save(transformed_protein, str(protein_output))
-        
-        vprint(f"  ✓ リガンド: {ligand_output}")
-        vprint(f"  ✓ タンパク質: {protein_output}")
-        
         # リガンドのSMILES表記を取得
         ligand_smiles = Chem.MolToSmiles(replaced_ligand)
-        
-        # 結果辞書を作成
+
+        # 結果辞書を作成（ファイル出力はソート後に行う）
         result = {
-            'ligand_file': str(ligand_output),
-            'protein_file': str(protein_output),
             'pattern_index': pattern_idx,
             'ligand_smiles': ligand_smiles,
-            'transform_rot': rot,    # 追加: E24→タンパク質空間の回転行列
-            'transform_tran': tran,  # 追加: E24→タンパク質空間の並進ベクトル
+            'transform_rot': rot,    # E24→タンパク質空間の回転行列
+            'transform_tran': tran,  # E24→タンパク質空間の並進ベクトル
+            '_mol': replaced_ligand,           # 一時保持（ファイル出力後に削除）
+            '_protein': transformed_protein,   # 一時保持（ファイル出力後に削除）
         }
         
         # プロファイルスコア計算（オプション）
@@ -1075,15 +1062,15 @@ def integrated_substructure_replacement(
         results.append(result)
 
     if n_patterns > 1 and not verbose:
-        print()  # 進捗表示の改行
+        qprint()  # 進捗表示の改行
 
     # 全パターンが立体障害でスキップされた場合、最も衝突距離が遠いものを採用
     if not results and clashed_patterns:
         best_clash = max(clashed_patterns, key=lambda x: x['min_clash_dist'])
         pat_idx = best_clash['pattern_idx']
-        print(f"\n⚠ 警告: 全パターンが立体障害でスキップされました。")
-        print(f"  最も衝突距離が遠いパターン {pat_idx}（最小衝突距離: {best_clash['min_clash_dist']:.3f}Å）を採用します。")
-        print(f"  ⚠ このパターンのスコアは信頼性が低い可能性があります。")
+        qprint(f"\n⚠ 警告: 全パターンが立体障害でスキップされました。")
+        qprint(f"  最も衝突距離が遠いパターン {pat_idx}（最小衝突距離: {best_clash['min_clash_dist']:.3f}Å）を採用します。")
+        qprint(f"  ⚠ このパターンのスコアは信頼性が低い可能性があります。")
 
         replaced_ligand = best_clash['replaced_ligand']
         rot = best_clash['rot']
@@ -1091,24 +1078,16 @@ def integrated_substructure_replacement(
         transformed_protein = best_clash['transformed_protein']
         transformed_center = best_clash['transformed_center']
 
-        ligand_output = output_path / f"pattern_{pat_idx}_ligand_replaced.sdf"
-        protein_output = output_path / f"pattern_{pat_idx}_protein_aligned.pdb"
-        writer = Chem.SDWriter(str(ligand_output))
-        writer.SetKekulize(False)
-        writer.write(replaced_ligand)
-        writer.close()
-        PDB.save(transformed_protein, str(protein_output))
-
         ligand_smiles = Chem.MolToSmiles(replaced_ligand)
         result = {
-            'ligand_file': str(ligand_output),
-            'protein_file': str(protein_output),
             'pattern_index': pat_idx,
             'ligand_smiles': ligand_smiles,
             'transform_rot': rot,
             'transform_tran': tran,
             'steric_clash_warning': True,
             'min_clash_distance': best_clash['min_clash_dist'],
+            '_mol': replaced_ligand,
+            '_protein': transformed_protein,
         }
 
         if calculate_scores:
@@ -1154,56 +1133,68 @@ def integrated_substructure_replacement(
                 vprint(f"  ✓ {removed_count} パターンを重複として除去しました")
                 vprint(f"  ✓ 残り {len(results)} パターン（ユニークなSMILES）")
     
-    # CSV出力（オプション）
+    # ソート/重複除去後、最良パターンのみファイル出力
+    if results:
+        best = results[0]
+        pat_idx = best['pattern_index']
+        ligand_output = output_path / f"pattern_{pat_idx}_ligand_replaced.sdf"
+        protein_output = output_path / f"pattern_{pat_idx}_protein_aligned.pdb"
+
+        vprint(f"  最良パターン {pat_idx} を出力中...")
+        writer = Chem.SDWriter(str(ligand_output))
+        writer.SetKekulize(False)
+        writer.write(best['_mol'])
+        writer.close()
+        PDB.save(best['_protein'], str(protein_output))
+
+        best['ligand_file'] = str(ligand_output)
+        best['protein_file'] = str(protein_output)
+        vprint(f"  ✓ リガンド: {ligand_output}")
+        vprint(f"  ✓ タンパク質: {protein_output}")
+
+    # CSV出力（オプション）- 最良パターンのみ
     if csv_output and results:
         vprint(f"\nCSVファイルを出力中...")
         csv_path = Path(csv_output)
         csv_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
+        best_result = results[0]
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
-            # CSVの列を決定（スコアの有無で変わる）
             fieldnames = ['pattern_index']
-            if calculate_scores and 'score' in results[0]:
+            if 'score' in best_result:
                 fieldnames.append('score')
             fieldnames.extend(['ligand_smiles', 'ligand_file', 'protein_file'])
-            
+
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            
-            for result in results:
-                # 出力する辞書を作成（fielднamesに含まれるキーのみ）
-                row = {key: result.get(key, '') for key in fieldnames}
-                writer.writerow(row)
-        
+            row = {key: best_result.get(key, '') for key in fieldnames}
+            writer.writerow(row)
+
         vprint(f"  ✓ CSV出力: {csv_path}")
 
-    # 画像出力（オプション）
+    # 画像出力（オプション）- 全パターンのスコア比較用
     if image_output and results and calculate_scores:
-        # スコアがあるパターンのみを収集
         results_with_score = [r for r in results if 'score' in r]
-        
+
         if results_with_score:
             vprint(f"\n画像ファイルを生成中...")
             from .utils.visualization_utils import draw_scored_molecules_grid
-            
-            # 各パターンの置換後リガンド分子を読み込み
+
             molecules = []
             scores = []
             titles = []
-            
+
             for result in results_with_score:
-                # SDFファイルから分子を読み込み
-                ligand_path = result['ligand_file']
-                mol = next(Chem.SDMolSupplier(ligand_path))
+                mol = result.get('_mol')
                 if mol is not None:
                     molecules.append(mol)
                     scores.append(result['score'])
                     titles.append(f"Pattern {result['pattern_index']}")
-            
+
             if molecules:
                 image_path = Path(image_output)
                 image_path.parent.mkdir(parents=True, exist_ok=True)
-                
+
                 draw_scored_molecules_grid(
                     molecules,
                     scores,
@@ -1216,6 +1207,14 @@ def integrated_substructure_replacement(
                 vprint(f"  ✓ {len(molecules)} パターンの構造式を可視化しました")
         else:
             vprint(f"  ⚠ 警告: スコア情報がないため画像を生成できませんでした")
+
+    # 一時データを削除し、返却用にクリーンアップ
+    for r in results:
+        r.pop('_mol', None)
+        r.pop('_protein', None)
+
+    # 最良パターンのみ返却
+    results = [results[0]] if results else []
     
     # 3D構造図の生成（オプション）
     if render_figures and results:
@@ -1284,5 +1283,5 @@ def integrated_substructure_replacement(
         except Exception as e:
             vprint(f"  ⚠ 警告: 3D描画中にエラーが発生しました: {e}")
 
-    print(f"\n完了: {len(results)} パターンの結果を生成しました")
+    qprint(f"\n完了: {len(results)} パターンの結果を生成しました")
     return results
