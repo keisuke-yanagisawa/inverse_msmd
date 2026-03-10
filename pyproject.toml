@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "inverse_msmd"
 version = "0.1.0"
-description = "A package for inverse MSMD (Molecular Simulation with Multiple Descriptors) analysis"
+description = "Inverse MSMD: substructure replacement and scoring using mixed-solvent molecular dynamics profiles"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}

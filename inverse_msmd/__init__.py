@@ -1,8 +1,8 @@
 """
-inverse_msmd - 混合溶媒分子動力学法（MSMD）の逆解析パッケージ
+inverse_msmd - Inverse MSMDパッケージ
 
-このパッケージは、混合溶媒分子動力学（Mixed-Solvent Molecular Dynamics, MSMD）
-シミュレーションの逆解析を行うためのユーティリティを提供します。
+共溶媒分子動力学（mixed-solvent molecular dynamics, MSMD）の
+プロファイルマップを活用した部分構造置換・スコアリング手法です。
 タンパク質構造の重ね合わせ、相互作用プロファイルに基づくマッチングスコア計算、
 部分構造置換が主な機能です。
 
