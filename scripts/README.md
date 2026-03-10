@@ -64,24 +64,16 @@ python scripts/integrated_replacement.py \
 
 以下のファイルが出力ディレクトリに生成されます：
 
-- `pattern_N_ligand_replaced.sdf` - 部分構造が置換されたリガンド（各atom matchingパターン）
-- `pattern_N_protein_aligned.pdb` - 座標変換されたタンパク質（各atom matchingパターン）
-- `substructure_matches.png` - 複数マッチ時の可視化画像（match_index未指定時のみ）
+- `pattern_N_ligand_replaced.sdf` - 部分構造が置換されたリガンド（最良パターン）
+- `pattern_N_protein_aligned.pdb` - 座標変換されたタンパク質（最良パターン）
 
 #### 処理フロー
 
 1. **ファイル読み込み**: リガンド、タンパク質、部分構造ファイルを読み込み
 2. **部分構造探索**: リガンド中の置換前部分構造を検索
-3. **マッチ選択**: 
-   - 1つのみ: 自動選択
-   - 複数かつmatch_index指定あり: 指定インデックスを使用
-   - 複数かつmatch_index指定なし: 可視化画像を出力し、最初のマッチを使用
-4. **Atom Matching**: 置換前後の部分構造間で原子対応付け
-5. **各パターンについて処理**:
-   - Superimpose計算
-   - タンパク質座標変換
-   - リガンド部分構造置換
-   - ファイル出力
+3. **Atom Matching**: 置換前後の部分構造間で原子対応付け
+4. **全パターンについて処理**: Superimpose計算、座標変換、部分構造置換、スコア計算
+5. **最良パターンを出力**: スコアが最も高いパターンのみファイル出力
 
 #### 注意事項
 

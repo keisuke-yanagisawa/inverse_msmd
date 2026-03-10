@@ -2,7 +2,7 @@
 """
 バッチ処理CLIスクリプト
 
-複数の置換パターン（from_probe, to_probe, match_index）に対して、
+複数の置換パターン（from_probe, to_probe）に対して、
 matching scoreを一括計算するコマンドラインツールです。
 
 使用例:

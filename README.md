@@ -41,15 +41,6 @@ pip install -e .[dev]
 ## クイックスタート
 
 ```bash
-# 1件だけ試す（部分構造置換 + スコア計算）
-python scripts/integrated_replacement.py \
-    --ligand data/atom_matching/4hw3_A_lig.sdf \
-    --protein data/sample_proteins/4hw3_A.pdb \
-    --from-file data/sample_probes/E23 \
-    --to-file data/sample_probes/E24 \
-    --output output/integrated/ \
-    --profile-dir data/profiles --probe-id E24
-
 # バッチ処理（並列 + 3D描画）
 python scripts/run_batch.py \
     --batch-csv examples/batch_config_sample.csv \
@@ -59,6 +50,15 @@ python scripts/run_batch.py \
     --profile-dir data/profiles \
     --output output/batch_results \
     --parallel --render-figures
+
+# 1件だけ試す場合
+python scripts/integrated_replacement.py \
+    --ligand data/atom_matching/4hw3_A_lig.sdf \
+    --protein data/sample_proteins/4hw3_A.pdb \
+    --from-file data/sample_probes/E23 \
+    --to-file data/sample_probes/E24 \
+    --output output/integrated/ \
+    --profile-dir data/profiles --probe-id E24
 ```
 
 **入力**: タンパク質PDB + リガンドSDF + プローブ分子ペア（置換前/後）
