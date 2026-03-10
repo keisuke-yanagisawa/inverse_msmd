@@ -1045,12 +1045,17 @@ def integrated_substructure_replacement(
             from .profile_scoring import calculate_profile_score
             
             # スコアを計算
+            # Cβ座標(タンパク質空間)をプローブ空間に逆変換してプロファイルと比較
+            # 順変換: y = x @ rot + tran (プローブ→タンパク質)
+            # 逆変換: x = (y - tran) @ rot^T
             try:
                 score = calculate_profile_score(
                     transformed_protein,
                     transformed_center,
                     profile_dir,
-                    probe_id
+                    probe_id,
+                    inverse_rot=rot,
+                    inverse_tran=tran,
                 )
                 result['score'] = score
                 print(f"  ✓ スコア: {score:.2f}")
@@ -1099,7 +1104,8 @@ def integrated_substructure_replacement(
             try:
                 score = calculate_profile_score(
                     transformed_protein, transformed_center,
-                    profile_dir, probe_id
+                    profile_dir, probe_id,
+                    inverse_rot=rot, inverse_tran=tran,
                 )
                 result['score'] = score
                 print(f"  スコア: {score:.2f} ⚠（立体障害あり、信頼性低）")
