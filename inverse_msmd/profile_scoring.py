@@ -4,10 +4,14 @@
 このモジュールは、タンパク質構造とプロファイルデータから
 マッチングスコアを計算する機能を提供します。
 
+入力 dx は log 形式の RIprofile (= log(occupancy / bulk_occupancy)) を想定し、
+スコアは各 Cβ 原子位置の RIprofile 値の単純和として計算されます
+(論文 Eq. (2) と一致)。
+
 主要な機能:
 - 相互作用プロファイルの読み込み
 - Cβ原子位置でのプロファイル値の3D補間
-- 対数スケールでのスコア統合
+- RIprofile 値の単純和によるスコア統合
 
 使用例:
     >>> from inverse_msmd.profile_scoring import calculate_profile_score
@@ -60,20 +64,21 @@ def calculate_profile_score(
     Returns
     -------
     float
-        対数マッチングスコア
-        より大きい（絶対値が小さい）値ほど良いマッチングを示します
-    
+        マッチングスコア (RIprofile 値の単純和)。
+        より大きい値ほど良いマッチングを示します。
+
     Raises
     ------
     ValueError
         プロファイルファイルが見つからない場合
         Cβ原子が見つからない場合
-    
+
     Notes
     -----
     - GLY残基はCβ原子を持たないため、自動的にスキップされます
     - 各原子位置でのプロファイル値は3D線形補間により取得されます
-    - 補間値が負の場合、プロファイルの最小値で置き換えられます
+    - グリッド外 (補間結果が NaN) のCβ原子はバルク参照 (寄与 0) として扱われます
+    - 入力 dx は log 形式の RIprofile を想定しています
     
     Examples
     --------
@@ -126,35 +131,30 @@ def calculate_profile_score(
         )
     
     # マッチングスコアを計算
-    log_score = 0.0
+    score = 0.0
     for atom in atoms_of_interest:
         resname = atom.get_parent().get_resname()
-        
+
         # プロファイルがない残基はスキップ（例: GLY）
         if resname not in profile_residues:
             continue
-        
+
         # 原子座標を取得
         coord = atom.get_coord()
         # 案B: タンパク質空間 → プローブ空間に逆変換してからサンプリング
         if inverse_rot is not None:
             coord = np.dot(coord - inverse_tran, inverse_rot.T)
 
-        # 3D補間でプロファイル値を取得
-        # interpolatedメソッドは各座標をリストで渡す必要がある
+        # 3D補間でRIprofile値 (log値) を取得
         profile_value = profiles[resname].interpolated(
             [coord[0]], [coord[1]], [coord[2]]
         )[0]
-        
-        # 補間値が負の場合はプロファイルの最小値を使用
-        # これにより log(負の値) でエラーが発生するのを防ぐ
-        if profile_value < 0:
-            profile_value = profiles[resname].grid.min()
-        
-        # さらに安全のため、非常に小さい値の場合は最小値を使用
-        profile_value = max(profile_value, profiles[resname].grid.min())
-        
-        # 対数スケールでスコアを累積
-        log_score += np.log(profile_value)
-    
-    return log_score
+
+        # グリッド外 → 補間結果が NaN になる場合はバルク参照 (log(1)=0) として扱う
+        if np.isnan(profile_value):
+            continue
+
+        # RIprofile 値はすでに log 変換済みのため単純和で累積
+        score += float(profile_value)
+
+    return score

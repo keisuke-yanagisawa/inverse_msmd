@@ -122,9 +122,9 @@ class TestCombineProfiles:
         assert result == output_path
         assert Path(output_path).exists()
 
-        # 検証: (data + eps) / bulk_total = (2.0 + 0.1) / 5.0 = 0.42
+        # 検証: log((data + eps) / bulk_total) = log((2.0 + 0.1) / 5.0)
         combined = Grid(output_path)
-        expected = (2.0 + 0.1) / 5.0
+        expected = np.log((2.0 + 0.1) / 5.0)
         assert np.allclose(combined.grid, expected, atol=1e-6)
 
     @pytest.mark.unit
@@ -143,8 +143,8 @@ class TestCombineProfiles:
         combine_profiles([dx1, dx2], [cnt1, cnt2], output_path, eps=eps)
 
         combined = Grid(output_path)
-        # (3.0 + 7.0 + 0.1) / (2.0 + 3.0) = 10.1 / 5.0 = 2.02
-        expected = (3.0 + 7.0 + eps) / (2.0 + 3.0)
+        # log((3.0 + 7.0 + 0.1) / (2.0 + 3.0)) = log(10.1 / 5.0) = log(2.02)
+        expected = np.log((3.0 + 7.0 + eps) / (2.0 + 3.0))
         assert np.allclose(combined.grid, expected, atol=1e-6)
 
     @pytest.mark.unit
@@ -159,8 +159,8 @@ class TestCombineProfiles:
         combine_profiles([dx_path], [cnt_path], output_path, eps=eps)
 
         combined = Grid(output_path)
-        # (0.0 + 0.5) / 1.0 = 0.5
-        assert np.allclose(combined.grid, 0.5, atol=1e-6)
+        # log((0.0 + 0.5) / 1.0) = log(0.5)
+        assert np.allclose(combined.grid, np.log(0.5), atol=1e-6)
 
     @pytest.mark.unit
     def test_empty_profile_list_raises_error(self, tmp_path):
