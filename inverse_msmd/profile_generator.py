@@ -177,11 +177,14 @@ def combine_profiles(
     output_path: str,
     eps: float = 0.1,
 ) -> str:
-    """複数のプロファイルを統合し、バルク比で正規化する。
+    """複数のプロファイルを統合し、バルク比の対数 (RIprofile) として保存する。
 
-    各DXファイルの密度を合計し、バルクカウントの合計で割ることで、
-    バルク溶媒中での期待値に対する比率に変換する。
-    log(0) を回避するため、微小値εを加算する。
+    各DXファイルの密度を合計し、バルクカウントの合計で割ることで
+    バルク溶媒中での期待値に対する比率に変換し、最後に自然対数を取る。
+    log(0) を回避するため、合計に微小値εを加算する。
+
+    出力 dx の各ボクセル値は ``log(occupancy / bulk_occupancy)``
+    すなわち論文 Eq. (1) の RIprofile に対応する (負値を取り得る)。
 
     Args:
         profile_dx_paths: 個別プロファイルDXファイルのパスリスト
@@ -223,9 +226,16 @@ def combine_profiles(
     # 正規化
     grid.grid /= bulk_total
 
+    # 対数変換: RIprofile = log(occupancy / bulk_occupancy)
+    # eps>0 を加算済みかつ bulk_total>0 なので grid.grid > 0 が保証される
+    grid.grid = np.log(grid.grid)
+
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     grid.export(output_path)
-    logger.info(f"統合完了: {output_path} (bulk_total={bulk_total:.4f})")
+    logger.info(
+        f"統合完了: {output_path} "
+        f"(bulk_total={bulk_total:.4f}, log range=[{grid.grid.min():.3f}, {grid.grid.max():.3f}])"
+    )
     return output_path
 
 

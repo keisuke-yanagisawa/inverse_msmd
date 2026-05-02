@@ -69,8 +69,6 @@ class TestProfileScoreCalculation:
         assert isinstance(score, float)
         assert not np.isnan(score)
         assert not np.isinf(score)
-        # 対数スコアは通常負の値
-        assert score < 0
     
     def test_different_probes(self, sample_protein, sample_probe_center):
         """異なるプローブでスコアが異なる"""
@@ -193,10 +191,9 @@ class TestProfileScoringEdgeCases:
     """エッジケースのテスト"""
     
     def test_negative_profile_values(self):
-        """負のプロファイル値が適切に処理される"""
-        # このテストは実際のプロファイルデータに依存するため、
-        # 負の値が出る場合のロジックが正しく動作することを確認
-        # 実装では負の値は最小値で置換されるため、NaNやInfにならないことを確認
+        """log 形式 RIprofile では負値が正常値として扱われる"""
+        # log(occupancy / bulk_occupancy) は負値を取り得る (バルク以下の領域)。
+        # 結果が NaN や Inf にならないことを確認する。
         from inverse_msmd.profile_scoring import calculate_profile_score
         from inverse_msmd.utils.bio_utils import PDB
         
