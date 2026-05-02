@@ -170,13 +170,14 @@ class TestLoadBatchConfig:
     
     def test_missing_required_column(self, tmp_path):
         """必須列の欠落でエラー"""
+        # to_probe 列を欠落させた CSV
         csv_file = tmp_path / "test_batch.csv"
         csv_file.write_text(
-            "job_id,from_probe,to_probe\n"
-            "job_001,E23,E24\n",
+            "job_id,from_probe\n"
+            "job_001,E23\n",
             encoding='utf-8'
         )
-        
+
         with pytest.raises(ValueError, match="必須列が不足しています"):
             load_batch_config(str(csv_file))
     
